@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background-color: #0b0f10;
+  color: #eaf2f2;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+@layer components {
+  .panel {
+    @apply bg-surface border border-border rounded-xl2 shadow-card;
+  }
+
+  .panel-hover {
+    @apply transition-all duration-200 hover:border-border-accent hover:shadow-glow;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-cyan/90 text-base font-semibold px-4 py-2.5 text-sm transition-all duration-200 hover:bg-cyan hover:shadow-glow active:scale-[0.98];
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-white/5 border border-border text-ink font-medium px-4 py-2.5 text-sm transition-all duration-200 hover:bg-white/[0.08] hover:border-white/20 active:scale-[0.98];
+  }
+
+  .input-field {
+    @apply bg-white/[0.04] border border-border rounded-xl px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-faint outline-none transition-all duration-200 focus:border-cyan/50 focus:bg-white/[0.06] focus:shadow-glow;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-ink-dim transition-all duration-200 hover:bg-white/[0.05] hover:text-ink;
+  }
+
+  .nav-item-active {
+    @apply bg-cyan-soft text-cyan border border-border-accent shadow-[0_0_0_1px_rgba(22,213,213,0.15),0_0_24px_-8px_rgba(22,213,213,0.5)];
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes orb-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes orb-spin-reverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.06);
+  }
+  28% {
+    transform: scale(1);
+  }
+  42% {
+    transform: scale(1.1);
+  }
+  70% {
+    transform: scale(1);
+  }
+}
+
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -1000;
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3.5s ease-in-out infinite;
+}
+
+.animate-orb-spin {
+  animation: orb-spin 22s linear infinite;
+}
+
+.animate-orb-spin-reverse {
+  animation: orb-spin-reverse 30s linear infinite;
+}
+
+.animate-heartbeat {
+  animation: heartbeat 2.2s ease-in-out infinite;
+}
+
+.animate-dash-flow {
+  stroke-dasharray: 8 6;
+  animation: dash-flow 12s linear infinite;
+}
