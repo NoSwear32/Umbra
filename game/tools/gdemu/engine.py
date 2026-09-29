@@ -56,6 +56,9 @@ class Opaque:
 
     def emit(self, *args):
         for cb in list(self._conns):
+            if rt._target_dead(cb):
+                self._conns.remove(cb)
+                continue
             cb(*args)
 
     # numbers and containers
@@ -357,7 +360,7 @@ class Tween(EngineObject):
         for st in steps:
             if st[0] == "prop":
                 _, obj, path, final = st
-                if getattr(obj, "_gd_freed", False):
+                if getattr(obj, "_gd_freed", False) or type(obj).__dict__.get("_gd_dead", False):
                     continue
                 if ":" in path:
                     head, sub = path.split(":", 1)

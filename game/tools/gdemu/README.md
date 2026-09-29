@@ -40,7 +40,9 @@ value types (`Vector2`, `Color`) are mutable Python objects.
 of permissive stubs (`engine.py`): nodes keep children, parents, properties and lifecycle order (`_ready`,
 `_process`, `_input`, `_draw`), signals can be connected and emitted, tweens complete on the next frame, and
 everything else the engine would compute (layout, fonts, audio, themes) is an opaque value that survives
-arithmetic. On top of that a seeded random "monkey" plays the app:
+arithmetic. A few engine rules that commonly bite dynamic UI code *are* enforced: touching a freed node fails,
+signals skip freed receivers, `add_child()` on a parent that is busy setting up its children fails, and
+`get_tree()` / `get_viewport()` are unavailable outside the tree. On top of that a seeded random "monkey" plays the app:
 
 * presses visible buttons (preferring ones not yet pressed), moves sliders, flips toggles, drives custom controls
   through `gui_input`, submits text, sets the clipboard to valid / invalid replays and character packs;

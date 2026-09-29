@@ -1251,6 +1251,43 @@ class InputEventKey(InputEvent):
         self.echo = False
 
 
+def _target_dead(cb):
+    """True if a signal callback belongs to an object that has been freed."""
+    fn = getattr(cb, "fn", cb)
+    target = getattr(fn, "__self__", None)
+    return target is not None and type(target).__dict__.get("_gd_dead", False)
+
+
+_DEAD_CLASSES = {}
+_DEAD_ALLOWED = frozenset(("__class__", "__dict__", "__eq__", "__hash__", "__ne__", "__repr__", "__bool__", "__len__",
+                           "_gd_dead", "_gd_freed", "_gd_in_tree", "_parent", "_children", "name", "is_queued_for_deletion",
+                           "get_instance_id", "queue_free", "free", "_gd_blocked", "_gd_walk"))
+
+
+def _dead_class(cls):
+    """A subclass whose every member access fails: what a freed engine object does."""
+    d = _DEAD_CLASSES.get(cls)
+    if d is None:
+        def getattribute(self, name, _cls=cls):
+            if name in _DEAD_ALLOWED:
+                return object.__getattribute__(self, name)
+            raise GDError("Attempt to access '%s' on a previously freed instance of '%s'." % (name, _cls.__name__))
+        def setattribute(self, name, value, _cls=cls):
+            if name in _DEAD_ALLOWED:
+                return object.__setattr__(self, name, value)
+            raise GDError("Attempt to set '%s' on a previously freed instance of '%s'." % (name, _cls.__name__))
+        d = type(cls.__name__, (cls,), {"__getattribute__": getattribute, "__setattr__": setattribute,
+                                        "_gd_dead": True, "__module__": cls.__module__})
+        _DEAD_CLASSES[cls] = d
+    return d
+
+
+def _mark_freed(node):
+    for n in list(node._gd_walk()):
+        if not type(n).__dict__.get("_gd_dead", False):
+            n.__class__ = _dead_class(type(n))
+
+
 class Signal:
     def __init__(self, owner=None, name=""):
         self._conns = []
@@ -1269,6 +1306,9 @@ class Signal:
 
     def emit(self, *args):
         for cb in list(self._conns):
+            if _target_dead(cb):
+                self._conns.remove(cb)
+                continue
             cb(*args)
 
     def get_connections(self):
@@ -1403,10 +1443,13 @@ class SceneTree(Object):
     def flush_frees(self):
         while self._to_free:
             n = self._to_free.pop(0)
+            if type(n).__dict__.get("_gd_dead", False):
+                continue
             if n._parent is not None:
                 n._parent.remove_child(n)
             elif n._gd_in_tree:
                 n._gd_exit_tree()
+            _mark_freed(n)
 
     def input(self, event):
         """Delivers an input event: _input of every node (last added first), then _unhandled_input."""
@@ -2074,7 +2117,7 @@ preload_ = load_
 
 
 def is_instance_valid(x):
-    return x is not None
+    return x is not None and not type(x).__dict__.get("_gd_dead", False)
 
 
 # ---------------------------------------------------------------------------------- constants
