@@ -47,7 +47,7 @@ def gen_tower():
     t = Tuning()
     out = []
     for seed in (1, 7, 2024, 4294967295):
-        tw = TowerGenerator(t, seed)
+        tw = PlatformGenerator(t, seed)
         tw.ensure_up_to(1010 * 125.0)
         rows = [plat_row(p) for p in tw.platforms[0:60]]
         rows += [plat_row(p) for p in tw.platforms[300:306]]

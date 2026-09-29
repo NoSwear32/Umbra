@@ -14,8 +14,30 @@ var on_changed: Callable = Callable()
 func _init(p_storage: Dictionary = {}) -> void:
 	storage = p_storage
 	for cat in CATEGORIES:
-		if not storage.has(cat) or not (storage[cat] is Array):
-			storage[cat] = []
+		_sanitize_category(String(cat))
+
+
+## Repairs one list of the (possibly hand-edited or damaged) profile: drops junk, restores the
+## number types JSON loses, drops entries that could never have ranked, keeps the order
+## best-first (ties keep their stored order) and trims to MAX_ENTRIES.
+func _sanitize_category(cat: String) -> void:
+	var cleaned: Array = []
+	var source: Variant = storage.get(cat, [])
+	if source is Array:
+		for e in source:
+			if not (e is Dictionary):
+				continue
+			var n: Dictionary = _normalize(e)
+			var value: int = value_of(n, cat)
+			if value <= 0:
+				continue
+			var pos: int = cleaned.size()
+			while pos > 0 and value_of(cleaned[pos - 1], cat) < value:
+				pos -= 1
+			cleaned.insert(pos, n)
+	while cleaned.size() > MAX_ENTRIES:
+		cleaned.pop_back()
+	storage[cat] = cleaned
 
 
 func provider_id() -> String:

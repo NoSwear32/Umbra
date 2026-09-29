@@ -1,6 +1,6 @@
-class_name TowerGenerator
+class_name PlatformGenerator
 extends RefCounted
-## Deterministic, seeded, endless tower generator (PlatformGenerator in the design doc).
+## Deterministic, seeded, endless platform generator: builds the tower one floor at a time.
 ##
 ## * One platform per floor; `platforms[i].floor_index == i`.
 ## * The order of random draws is part of the replay contract - do not reorder them.

@@ -71,7 +71,7 @@ func step(head_y: float, highest_floor: int) -> void:
 		cam_bottom = cam_bottom + spd * SimConst.DT
 	var target: float = head_y - t.camera_follow_line * t.view_height
 	if target > cam_bottom:
-		cam_bottom = target
+		cam_bottom = cam_bottom + (target - cam_bottom) * t.camera_follow_gain
 
 
 ## Debug helper: jump straight to a stage (keeps timers consistent).

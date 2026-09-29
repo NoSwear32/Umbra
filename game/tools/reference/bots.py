@@ -98,7 +98,7 @@ def reach_test(seeds, floors, verbose=False):
     total = 0
     worst = []
     for seed in seeds:
-        tower = TowerGenerator(t, seed)
+        tower = PlatformGenerator(t, seed)
         tower.ensure_up_to(floors * 130.0)
         for k in range(1, min(floors, len(tower.platforms) - 1) + 1):
             prev = tower.platforms[k - 1]

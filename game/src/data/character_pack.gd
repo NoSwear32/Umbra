@@ -28,7 +28,8 @@ const MAX_FRAME: int = 256
 const MAX_FRAMES_PER_ANIM: int = 16
 const MAX_ROWS: int = 24
 const MAX_FPS: float = 60.0
-const ID_PATTERN: String = "^[a-z0-9_]{3,24}$"
+const ID_MIN_LENGTH: int = 3
+const ID_MAX_LENGTH: int = 24
 const PNG_SIGNATURE: Array = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
 
 
@@ -53,10 +54,8 @@ static func parse(text: String, reserved_ids: Array = []) -> Dictionary:
 
 	# ---- identity
 	var id: String = String(d.get("id", ""))
-	var re: RegEx = RegEx.new()
-	re.compile(ID_PATTERN)
-	if re.search(id) == null:
-		return _fail("Invalid id: use 3-24 characters a-z, 0-9 and _.")
+	if not is_valid_id(id):
+		return _fail("Invalid id: use %d-%d characters a-z, 0-9 and _." % [ID_MIN_LENGTH, ID_MAX_LENGTH])
 	if reserved_ids.has(id):
 		return _fail("The id '%s' is already used by a built-in character." % id)
 	var display_name: String = _clean_text(String(d.get("name", "")), 20)
@@ -153,6 +152,19 @@ static func parse(text: String, reserved_ids: Array = []) -> Dictionary:
 	def.ui_color = c1
 	def.texture = ImageTexture.create_from_image(img)
 	return {"ok": true, "error": "", "def": def}
+
+
+## True for 3-24 characters of a-z, 0-9 and "_" (checked character by character: no pattern
+## quirks such as "$" matching before a trailing newline).
+static func is_valid_id(id: String) -> bool:
+	if id.length() < ID_MIN_LENGTH or id.length() > ID_MAX_LENGTH:
+		return false
+	for i in range(id.length()):
+		var code: int = id.unicode_at(i)
+		var ok: bool = (code >= 97 and code <= 122) or (code >= 48 and code <= 57) or code == 95
+		if not ok:
+			return false
+	return true
 
 
 static func _fail(message: String) -> Dictionary:

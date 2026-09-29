@@ -24,8 +24,12 @@ import json
 import os
 import re
 import sys
+
 from lark import Tree, Token
 from gdtoolkit.parser import parser as gdparser
+
+# Object methods every script can call that extension_api.json does not list.
+IMPLICIT_OBJECT_METHODS = frozenset(["free"])
 
 # --------------------------------------------------------------------------- API
 class Api:
@@ -1170,6 +1174,8 @@ class Checker:
         if kind == "engine":
             mm = self.api.members(target).get(name)
             if mm is None:
+                if name in IMPLICIT_OBJECT_METHODS:
+                    return None
                 self.err(node, "engine class %s has no method '%s' (in %s)" % (target, name, self.api.version))
                 return None
             if mm[0] == "method":
@@ -1237,6 +1243,8 @@ class Checker:
         if cname in self.api.classes:
             mm = self.api.members(cname).get(name)
             if mm is None:
+                if name in IMPLICIT_OBJECT_METHODS:
+                    return None
                 self.err(node, "engine class %s has no method '%s' (in %s)" % (cname, name, self.api.version))
                 return None
             if mm[0] == "method":

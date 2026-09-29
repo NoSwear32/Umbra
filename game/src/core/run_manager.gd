@@ -25,7 +25,7 @@ var seed_value: int = 0
 var tick_count: int = 0
 var dead: bool = false
 
-var tower: TowerGenerator
+var tower: PlatformGenerator
 var player: PlayerController
 var scroll: ScrollDifficultyManager
 var combo: ComboManager
@@ -48,7 +48,7 @@ var invincible: bool = false
 func _init(p_tuning: GameTuning, p_seed: int) -> void:
 	tuning = p_tuning
 	seed_value = p_seed
-	tower = TowerGenerator.new(tuning, seed_value)
+	tower = PlatformGenerator.new(tuning, seed_value)
 	player = PlayerController.new(tuning)
 	scroll = ScrollDifficultyManager.new(tuning)
 	combo = ComboManager.new(tuning)
@@ -170,6 +170,13 @@ func debug_teleport_to_floor(target_floor: int) -> void:
 	tower.ensure_up_to(plat.y + tuning.view_height + tuning.generate_ahead + 400.0)
 	scroll.cam_bottom = plat.y - tuning.view_height * tuning.camera_follow_line
 	scroll.prev_cam_bottom = scroll.cam_bottom
+
+
+func debug_force_game_over() -> void:
+	debug_used = true
+	invincible = false
+	if not dead:
+		_die()
 
 
 func debug_set_stage(new_stage: int) -> void:

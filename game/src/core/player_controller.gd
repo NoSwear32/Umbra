@@ -134,7 +134,7 @@ func _horizontal(axis: float) -> float:
 
 ## Advances the player by one tick.
 ## axis: -1 .. 1 (left .. right), jump: true on the tick a jump is requested.
-func step(axis: float, jump: bool, tower: TowerGenerator) -> void:
+func step(axis: float, jump: bool, tower: PlatformGenerator) -> void:
 	var t: GameTuning = tuning
 	events.clear()
 	prev_x = x

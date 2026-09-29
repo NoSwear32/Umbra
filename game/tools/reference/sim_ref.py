@@ -107,6 +107,7 @@ class Tuning:
         self.scroll_ramp_seconds = 2.0
         self.scroll_stage_blend_seconds = 1.5
         self.camera_follow_line = 0.60
+        self.camera_follow_gain = 0.30
         self.camera_start_bottom = -64.0
         self.death_margin = 0.0
         # combo
@@ -213,7 +214,7 @@ class Platform:
         return self.x + self.w * 0.5
 
 
-class TowerGenerator:
+class PlatformGenerator:
     def __init__(self, t, seed):
         self.t = t
         self.seed_value = seed
@@ -583,7 +584,7 @@ class Scroll:
             self.cam_bottom = self.cam_bottom + speed * DT
         target = head_y - t.camera_follow_line * t.view_height
         if target > self.cam_bottom:
-            self.cam_bottom = target
+            self.cam_bottom = self.cam_bottom + (target - self.cam_bottom) * t.camera_follow_gain
 
 
 # ---------------------------------------------------------------------------
@@ -675,7 +676,7 @@ class Run:
         self.seed = seed
         self.tick_count = 0
         self.dead = False
-        self.tower = TowerGenerator(t, seed)
+        self.tower = PlatformGenerator(t, seed)
         self.player = Player(t)
         self.scroll = Scroll(t)
         self.combo = Combo(t, self)

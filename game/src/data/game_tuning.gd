@@ -123,6 +123,9 @@ extends Resource
 @export var scroll_stage_blend_seconds: float = 1.5
 ## The camera follows the player upwards when the head passes this fraction of the view height.
 @export_range(0.3, 0.9, 0.01) var camera_follow_line: float = 0.60
+## How quickly the camera catches up when the player is above the follow line (fraction per tick).
+## 1.0 = hard clamp, smaller = softer. The kill line always matches the visible screen bottom.
+@export_range(0.05, 1.0, 0.01) var camera_follow_gain: float = 0.30
 ## Altitude of the bottom of the view at the start of a run (negative shows some ground).
 @export var camera_start_bottom: float = -64.0
 ## Extra pixels below the screen before the run ends.
@@ -211,7 +214,7 @@ const SIM_KEYS: Array = [
 	"generate_ahead",
 	"scroll_start_floor", "scroll_speed_start", "scroll_speed_max", "scroll_stage_seconds",
 	"scroll_stage_halfpoint", "scroll_ramp_seconds", "scroll_stage_blend_seconds",
-	"camera_follow_line", "camera_start_bottom", "death_margin",
+	"camera_follow_line", "camera_follow_gain", "camera_start_bottom", "death_margin",
 	"combo_min_floors", "combo_timeout", "combo_min_jumps_for_bonus",
 	"combo_min_total_floors_for_bonus", "combo_bonus_exponent", "combo_bonus_multiplier",
 	"combo_only_new_floors",

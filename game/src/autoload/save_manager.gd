@@ -38,6 +38,12 @@ var future_version: bool = false
 ##   MIGRATIONS[1] = _migrate_1_to_2
 var migrations: Dictionary = {}
 
+## File locations (instance variables so tests can point them at a scratch folder).
+var dir_path: String = DIR_PATH
+var main_path: String = MAIN_PATH
+var backup_path: String = BACKUP_PATH
+var tmp_path: String = TMP_PATH
+
 var _dirty: bool = false
 var _timer: float = 0.0
 var _last_error: String = ""
@@ -117,10 +123,10 @@ func last_error() -> String:
 # Loading
 # ---------------------------------------------------------------------------
 func load_all() -> void:
-	DirAccess.make_dir_recursive_absolute(DIR_PATH)
+	DirAccess.make_dir_recursive_absolute(dir_path)
 	DirAccess.make_dir_recursive_absolute(REPLAY_DIR)
 	DirAccess.make_dir_recursive_absolute(CHARACTER_DIR)
-	var candidates: Array = [["main", MAIN_PATH], ["tmp", TMP_PATH], ["backup", BACKUP_PATH]]
+	var candidates: Array = [["main", main_path], ["tmp", tmp_path], ["backup", backup_path]]
 	var found: Dictionary = {}
 	var source: String = "new"
 	for c in candidates:
@@ -131,7 +137,7 @@ func load_all() -> void:
 			break
 		elif FileAccess.file_exists(String(c[1])) and String(c[0]) == "main":
 			# keep the unreadable file for post-mortem instead of overwriting it silently
-			DirAccess.copy_absolute(String(c[1]), DIR_PATH + "/profile.corrupt.json")
+			DirAccess.copy_absolute(String(c[1]), dir_path + "/profile.corrupt.json")
 	loaded_from = source
 	if source == "new":
 		data = default_data()
@@ -208,7 +214,8 @@ func save_now() -> bool:
 	var ok: bool = write_atomic(text)
 	if ok:
 		saved.emit()
-		Events.save_completed.emit()
+		if is_inside_tree():
+			Events.save_completed.emit()
 	else:
 		_dirty = true
 		_timer = 5.0
@@ -216,27 +223,27 @@ func save_now() -> bool:
 	return ok
 
 
-## Crash-safe write of `text` to MAIN_PATH (tmp -> verify -> backup -> rename).
+## Crash-safe write of `text` to main_path (tmp -> verify -> backup -> rename).
 func write_atomic(text: String) -> bool:
-	DirAccess.make_dir_recursive_absolute(DIR_PATH)
-	var f: FileAccess = FileAccess.open(TMP_PATH, FileAccess.WRITE)
+	DirAccess.make_dir_recursive_absolute(dir_path)
+	var f: FileAccess = FileAccess.open(tmp_path, FileAccess.WRITE)
 	if f == null:
 		_last_error = "cannot open temp file (error %d)" % FileAccess.get_open_error()
 		return false
 	f.store_string(text)
 	f.flush()
 	f.close()
-	var check: Variant = read_json_file(TMP_PATH)
+	var check: Variant = read_json_file(tmp_path)
 	if not (check is Dictionary) or not _is_valid_profile(check):
 		_last_error = "verification of the temp file failed"
 		return false
-	if FileAccess.file_exists(MAIN_PATH):
-		DirAccess.copy_absolute(MAIN_PATH, BACKUP_PATH)
-	var err: int = DirAccess.rename_absolute(TMP_PATH, MAIN_PATH)
+	if FileAccess.file_exists(main_path):
+		DirAccess.copy_absolute(main_path, backup_path)
+	var err: int = DirAccess.rename_absolute(tmp_path, main_path)
 	if err != OK:
 		# some platforms refuse to overwrite: remove the old file and retry
-		DirAccess.remove_absolute(MAIN_PATH)
-		err = DirAccess.rename_absolute(TMP_PATH, MAIN_PATH)
+		DirAccess.remove_absolute(main_path)
+		err = DirAccess.rename_absolute(tmp_path, main_path)
 	if err != OK:
 		_last_error = "rename failed (error %d)" % err
 		return false

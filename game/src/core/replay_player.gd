@@ -58,6 +58,11 @@ func step() -> bool:
 	return true
 
 
+## The (quantised) horizontal input currently being applied - lets views animate the character.
+func current_axis() -> float:
+	return ReplayRecorder.dequantize(_axis_q)
+
+
 ## Simulates the whole replay instantly (used by tests and for crash recovery).
 ## Returns the final run result.
 func simulate_all(max_ticks: int = 0) -> Dictionary:
