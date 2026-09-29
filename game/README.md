@@ -67,7 +67,7 @@ game/
 │  ├─ view/       GameScene (orchestrator), TowerView, PlayerView, BackdropView, FxLayer, HUD, camera
 │  ├─ ui/         UIKit (theme), screens (menu, settings, scores...), overlays (pause, game over, tutorial)
 │  └─ util/       SafeArea, Haptics, ShareUtil, Fmt
-├─ assets/        art (themes, characters, logo), audio (SFX + music), launcher icons — all generated
+├─ assets/        art (themes, characters, logo), display font, audio (SFX + music), launcher icons — all generated
 ├─ tests/         headless test suites + golden vectors from the Python reference simulation
 ├─ tools/         generators (audio, art), reference simulation, static checker, scripts
 └─ docs/          architecture, tuning guide, QA checklist, export guide, formats
@@ -93,8 +93,10 @@ game/
 | `python3 tools/reference/gen_golden.py` | regenerate `tests/golden/*.json` from the Python reference simulation |
 | `python3 tools/generate_audio.py` | regenerate all sound effects and music (`assets/audio`) |
 | `python3 tools/gen_art.py [themes\|characters\|ui]` | regenerate themes, character sheets, logo and icons |
+| `python3 tools/gen_font.py` | regenerate the game's own display typeface (`assets/fonts/spire_display.ttf`) |
 
-The generators need Python 3 with `numpy` and `Pillow`; `gdcheck.py` and the linters need `gdtoolkit`.
+The art and audio generators need Python 3 with `numpy` and `Pillow`, the font generator additionally `fonttools` and
+`shapely`; `gdcheck.py` and the linters need `gdtoolkit`.
 
 ## Determinism in one paragraph
 

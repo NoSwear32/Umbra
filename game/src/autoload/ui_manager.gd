@@ -3,18 +3,21 @@ extends Node
 ##
 ## Screens are UIScreen subclasses created lazily from the SCREENS table and cached.
 ## Layers: menus (30) < dialogs, toasts and the fade curtain (100).
+##
+## The table holds script PATHS that are loaded on first use (not preloaded): the screens talk to
+## this autoload, so a compile-time dependency in the other direction would be a cycle.
 
 const SCREENS: Dictionary = {
-	"main_menu": preload("res://src/ui/screens/main_menu_screen.gd"),
-	"control_select": preload("res://src/ui/screens/control_select_screen.gd"),
-	"calibrate": preload("res://src/ui/screens/calibration_screen.gd"),
-	"characters": preload("res://src/ui/screens/characters_screen.gd"),
-	"high_scores": preload("res://src/ui/screens/high_scores_screen.gd"),
-	"replays": preload("res://src/ui/screens/replays_screen.gd"),
-	"statistics": preload("res://src/ui/screens/statistics_screen.gd"),
-	"settings": preload("res://src/ui/screens/settings_screen.gd"),
-	"about": preload("res://src/ui/screens/about_screen.gd"),
-	"help": preload("res://src/ui/screens/help_screen.gd"),
+	"main_menu": "res://src/ui/screens/main_menu_screen.gd",
+	"control_select": "res://src/ui/screens/control_select_screen.gd",
+	"calibrate": "res://src/ui/screens/calibration_screen.gd",
+	"characters": "res://src/ui/screens/characters_screen.gd",
+	"high_scores": "res://src/ui/screens/high_scores_screen.gd",
+	"replays": "res://src/ui/screens/replays_screen.gd",
+	"statistics": "res://src/ui/screens/statistics_screen.gd",
+	"settings": "res://src/ui/screens/settings_screen.gd",
+	"about": "res://src/ui/screens/about_screen.gd",
+	"help": "res://src/ui/screens/help_screen.gd",
 }
 
 ## The running game (set by Main). Used for Android back handling and starting runs.
@@ -83,8 +86,11 @@ func _get_screen(id: String) -> UIScreen:
 	if not SCREENS.has(id):
 		push_error("UIManager: unknown screen '%s'" % id)
 		return null
-	var script: GDScript = SCREENS[id]
-	var s: UIScreen = script.new()
+	var script: GDScript = load(String(SCREENS[id])) as GDScript
+	if script == null:
+		push_error("UIManager: cannot load screen '%s'" % id)
+		return null
+	var s: UIScreen = script.new() as UIScreen
 	s.screen_id = id
 	s.visible = false
 	_screen_layer.add_child(s)

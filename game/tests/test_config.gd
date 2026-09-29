@@ -359,6 +359,20 @@ func _assets(t: TestContext) -> void:
 		if found:
 			var sheet_tex: Texture2D = load(sheet) as Texture2D
 			t.check(sheet_tex != null and sheet_tex.get_width() == 768 and sheet_tex.get_height() == 1280, "character sheet is 768x1280: %s" % sheet)
+	var font_path: String = "res://assets/fonts/spire_display.ttf"
+	var font_found: bool = ResourceLoader.exists(font_path)
+	t.check(font_found, "display font exists: %s" % font_path)
+	if font_found:
+		var font: Font = load(font_path) as Font
+		t.check(font != null, "the display font loads")
+		if font != null:
+			var covered: bool = true
+			for ch in "SPIRE SPRINT 0123456789 FLOOR COMBO x!?:,.+-%/'":
+				if not font.has_char(ch.unicode_at(0)):
+					covered = false
+			t.check(covered, "the display font covers the HUD and menu characters")
+			t.check(font.has_char("a".unicode_at(0)), "lower-case letters map to the capital forms")
+	t.check(UIKit.FONT_PATH == font_path, "UIKit loads the same font file")
 	for sfx in AudioScript.SFX_NAMES:
 		var sound: String = "res://assets/audio/%s.wav" % String(sfx)
 		var sound_found: bool = ResourceLoader.exists(sound)

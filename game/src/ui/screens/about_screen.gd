@@ -34,7 +34,7 @@ func build() -> void:
 	var lic: Dictionary = UIKit.section_card("Licences")
 	box.add_child(lic["card"])
 	var lb: VBoxContainer = lic["body"]
-	lb.add_child(UIKit.wrap_label("Spire Sprint is built with the Godot Engine, which is free software. Text is drawn with the engine's built-in font.", UIKit.FS_BODY, UIKit.C_TEXT))
+	lb.add_child(UIKit.wrap_label("Spire Sprint is built with the Godot Engine, which is free software. Headings use the game's own Spire Display typeface; body text uses the engine's built-in font.", UIKit.FS_BODY, UIKit.C_TEXT))
 	lb.add_child(UIKit.button("GODOT ENGINE LICENCE", _on_engine_licence, "secondary", Vector2(0, 64)))
 	lb.add_child(UIKit.button("THIRD-PARTY COMPONENTS", _on_components, "secondary", Vector2(0, 64)))
 
