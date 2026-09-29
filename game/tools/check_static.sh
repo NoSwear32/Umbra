@@ -29,6 +29,8 @@ echo "== golden vectors are up to date"
 python3 tools/reference/gen_golden.py > /dev/null && git diff --quiet -- tests/golden || { echo "golden vectors changed - review and commit them"; FAIL=1; }
 echo "== gdemu (tests on the GDScript emulator, no engine)"
 python3 -m tools.gdemu test || FAIL=1
+python3 -m tools.gdemu first-launch || FAIL=1
+python3 -m tools.gdemu first-launch skip || FAIL=1
 if [ "${SMOKE:-0}" = "1" ]; then
   echo "== gdemu smoke (monkey run on engine stubs)"
   python3 -m tools.gdemu smoke --seeded --actions 200 --seed 1 || FAIL=1

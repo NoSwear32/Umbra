@@ -574,3 +574,88 @@ def _ranges(lines):
         out.append(str(lines[i]) if i == j else "%d-%d" % (lines[i], lines[j]))
         i = j + 1
     return ", ".join(out)
+
+
+# ------------------------------------------------------------------------------------ first launch
+def first_launch_check(loader, skip_tutorial=False):
+    """The very first launch played the way a new player would: logo splash, control selector, main menu, PLAY,
+    interactive tutorial, then either SKIP (straight into a real run) or play it out. Returns the list of
+    expectations that did not hold (empty = the path works)."""
+    problems = []
+    m = Monkey(loader, 1)
+    loader.boot("all")
+    m.invariants.hook_finish_run()
+    main = loader.instantiate("res://src/main.gd")
+    rt.TREE.root.add_child(main)
+    rt.TREE.current_scene = main
+    game = main.game
+    ui = loader.ns["UIManager"]
+    sm = loader.ns["SettingsManager"]
+    mode = type(game).Mode
+
+    def expect(cond, message):
+        if not cond:
+            problems.append(message)
+        return cond
+
+    def labels():
+        return [getattr(n, "text", "") for n, sig in m.interactive() if sig == "pressed"]
+
+    def press(text):
+        for node, sig in m.interactive():
+            if sig == "pressed" and getattr(node, "text", "") == text:
+                m.guard("press " + text, node.pressed.emit)
+                return True
+        return False
+
+    m.frames(120)
+    expect(loader.ns["GameManager"].is_first_launch(), "a fresh profile counts as the first launch")
+    expect(ui.current_id() == "control_select", "the first screen is the control selector (got %r)" % ui.current_id())
+    expect(len([1 for n, sig in m.interactive() if sig == "gui_input"]) == 2, "the selector offers two control cards")
+    expect(press("CONTINUE"), "the selector has a CONTINUE button")
+    m.frames(30)
+    expect(ui.current_id() == "main_menu", "CONTINUE leads to the main menu (got %r)" % ui.current_id())
+    expect(sm.get_bool("control_chosen") and sm.get_string("control_mode") == "touch", "the choice is stored (touch is preselected)")
+    expect(not loader.ns["GameManager"].is_first_launch(), "the first launch is over")
+    for label in ("PLAY", "CHARACTER", "HIGH SCORES", "REPLAYS", "STATISTICS", "SETTINGS", "ABOUT", "EXIT"):
+        expect(label in labels(), "the main menu offers %s" % label)
+    expect(press("PLAY"), "PLAY can be pressed")
+    m.frames(30)
+    expect(game.mode == mode.TUTORIAL and game.tutorial.visible, "the first PLAY starts the interactive tutorial")
+    expect("SKIP TUTORIAL" in labels(), "the tutorial can be skipped")
+    if skip_tutorial:
+        press("SKIP TUTORIAL")
+        m.frames(30)
+        expect(game.mode == mode.LIVE and game.run is not None and not game.run.dead, "skipping continues into a real run")
+        expect(sm.get_bool("tutorial_done"), "skipping marks the tutorial as done")
+        expect(not game.tutorial.visible, "the tutorial is hidden in the real run")
+    else:
+        for _ in range(60):
+            if game.run is None or game.run.dead or game.tutorial.is_finished_panel_visible():
+                break
+            m.play_burst(2.0)
+        if game.tutorial.is_finished_panel_visible():
+            tick = game.run.tick_count
+            m.frames(180)
+            expect(game.run.tick_count == tick, "the practice run stands still behind the 'you're ready' panel")
+            expect(not game.game_over.visible, "no results panel appears behind it")
+            expect(press("PLAY"), "the 'you're ready' panel has a PLAY button")
+            m.frames(30)
+            expect(game.mode == mode.LIVE and not game.tutorial.visible, "PLAY after the tutorial starts a real run")
+        else:
+            m.frames(240)
+            expect(game.game_over.visible, "a practice run that ends shows the results")
+            expect(not game.tutorial.visible, "the tutorial card is gone under the results")
+        expect(sm.get_bool("tutorial_done"), "finishing the tutorial marks it as done")
+    # a real run can be paused, resumed and left
+    if game.mode == mode.LIVE and game.run is not None and not game.run.dead:
+        m.back()
+        m.frames(10)
+        expect(game.paused, "Back pauses a live run")
+        expect("RESUME" in labels(), "the pause menu offers RESUME")
+        press("RESUME")
+        m.frames(20)
+        expect(not game.paused, "RESUME continues the run")
+    for sig, (count, trace, label) in m.errors.items():
+        problems.append("runtime error (%dx): %s" % (count, trace.splitlines()[0]))
+    return problems

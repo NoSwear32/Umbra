@@ -57,6 +57,8 @@ var _replay_back_to_game_over: bool = false
 var _tutorial_from_play: bool = false
 var _last_practice: bool = false
 var _run_ended_handled: bool = false
+## The tutorial's "you're ready" panel is up: the practice run stands still until the player chooses.
+var _tutorial_frozen: bool = false
 var _music_state: String = ""
 
 
@@ -231,6 +233,7 @@ func _begin_run(new_mode: int, seed_value: int, replay: ReplayData) -> void:
 	_time_scale = 1.0
 	_replay_finished = false
 	_run_ended_handled = false
+	_tutorial_frozen = false
 	_combo_level = 0
 	_last_replay = null
 
@@ -306,7 +309,7 @@ func _process(delta: float) -> void:
 		return
 	if run == null:
 		return
-	if not paused and not run.dead and not _replay_finished:
+	if not paused and not run.dead and not _replay_finished and not _tutorial_frozen:
 		_accum += minf(delta, MAX_FRAME_TIME) * _time_scale
 		var steps: int = 0
 		while _accum >= SimConst.DT and steps < MAX_STEPS_PER_FRAME:
@@ -346,7 +349,7 @@ func _update_visuals(delta: float) -> void:
 	var run_tuning: GameTuning = run.tuning
 	var tower_left: float = (vp.x - run_tuning.tower_width) * 0.5
 	var alpha: float = 1.0
-	if not paused and not run.dead and not _replay_finished:
+	if not paused and not run.dead and not _replay_finished and not _tutorial_frozen:
 		alpha = clampf(_accum / SimConst.DT, 0.0, 1.0)
 	var cam_bottom: float = lerpf(run.scroll.prev_cam_bottom, run.scroll.cam_bottom, alpha)
 	camera.update(delta)
@@ -543,6 +546,8 @@ func _on_run_ended(result: Dictionary) -> void:
 	_last_replay = replay
 	var practice: bool = (mode == Mode.TUTORIAL)
 	_last_practice = practice
+	if practice:
+		tutorial.stop()  # never show the tutorial card / "you're ready" panel under the results
 	var summary: Dictionary = GameManager.finish_run(result, null if practice else replay)
 	_last_summary = summary
 	GameManager.set_state(GameManager.State.GAME_OVER)
@@ -772,6 +777,7 @@ func _on_tutorial_skipped() -> void:
 
 func _on_tutorial_completed() -> void:
 	SettingsManager.set_value("tutorial_done", true)
+	_tutorial_frozen = true  # the tower would otherwise keep rising behind the "you're ready" panel
 
 
 func _on_tutorial_play() -> void:

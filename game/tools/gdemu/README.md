@@ -11,6 +11,7 @@ pip install gdtoolkit           # parser used by the transpiler (Pillow / fontto
 python3 -m tools.gdemu test     # all suites in tests/ (same list as tests/run_tests.gd)
 python3 -m tools.gdemu test physics input     # only some suites
 python3 -m tools.gdemu check    # transpile every script under src/ and list what it cannot resolve
+python3 -m tools.gdemu first-launch [skip]   # the very first launch as a new player plays it (selector, menu, tutorial)
 python3 -m tools.gdemu smoke --seeded --actions 600 --seed 7    # boot the whole app on engine stubs and press buttons
 python3 -m tools.gdemu smoke --lines --detail game_scene.gd     # ... with line coverage (slow), missed lines of one file
 python3 -m tools.gdemu.mutation_check    # inject faults into copies of the project; the suites must notice each
@@ -60,6 +61,12 @@ live result exactly** (score, floor, combos, jumps, rebounds, duration) — that
 `InputManager` sampling and `ReplayRecorder` to `ReplayPlayer`. A run submitted twice is a violation too. A fixed
 warm-up (one played and quit run, a replay watched and left with Back, hostile settings values) runs first when
 `--seeded` is given.
+
+`first-launch` is the scripted version of the most important path: a fresh profile, logo splash, control selector,
+main menu, PLAY, the interactive tutorial played with real touches (or skipped), then a real run that is paused and
+resumed. It checks the expected screens and states at every step. (It found that the tutorial's "you're ready"
+panel and the results panel could be on screen at the same time while the practice tower kept rising; the practice
+run now stands still behind the panel.)
 
 Every Python-level exception is collected with a GDScript file/line trace. It is a *smoke test*: it finds the
 project's own runtime errors (missing keys, null dereferences, bad arguments, broken state transitions) but

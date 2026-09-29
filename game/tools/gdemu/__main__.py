@@ -5,14 +5,18 @@ gdemu command line.
     python3 -m tools.gdemu dump res://src/x.gd  print the Python generated for one script
     python3 -m tools.gdemu check                transpile + load every script under src/ and report gaps
     python3 -m tools.gdemu smoke [--actions N] [--seed S]   boot the whole app on engine stubs and press buttons
+    python3 -m tools.gdemu first-launch [skip]              the very first launch as a new player plays it
 
 Run from the project directory (the folder that contains project.godot).
 gdemu executes the project's GDScript logic under CPython with an emulated runtime. It is NOT the
 Godot engine: it is evidence about the logic, not about engine behaviour. See tools/gdemu/README.md.
 """
+import atexit
 import os
 import re
+import shutil
 import sys
+import tempfile
 import time
 
 from .loader import Loader
@@ -124,17 +128,31 @@ def cmd_smoke(loader, args):
     return 1 if m.errors else 0
 
 
+def cmd_first_launch(loader, args):
+    from . import smoke
+    problems = smoke.first_launch_check(loader, skip_tutorial="skip" in args)
+    for p in problems:
+        print("FAIL", p)
+    print("first launch (%s the tutorial): %s" % ("skipping" if "skip" in args else "playing", "ok" if not problems else "%d problem(s)" % len(problems)))
+    return 1 if problems else 0
+
+
 def main(argv):
-    if len(argv) < 2 or argv[1] not in ("test", "dump", "check", "smoke"):
+    if len(argv) < 2 or argv[1] not in ("test", "dump", "check", "smoke", "first-launch"):
         print(__doc__)
         return 2
     root = os.getcwd()
     if not os.path.isfile(os.path.join(root, "project.godot")):
         print("run this from the folder that contains project.godot")
         return 2
-    os.environ.setdefault("GDEMU_TMP", os.path.join(root, ".gdemu_tmp"))
-    loader = Loader(root, dump_dir=os.environ.get("GDEMU_DUMP"), permissive=(argv[1] == "smoke"))
-    return {"test": cmd_test, "dump": cmd_dump, "check": cmd_check, "smoke": cmd_smoke}[argv[1]](loader, argv[2:])
+    if not os.environ.get("GDEMU_TMP"):
+        # every invocation starts from an empty user:// (a fresh profile) and leaves nothing behind
+        scratch = tempfile.mkdtemp(prefix="gdemu_")
+        atexit.register(shutil.rmtree, scratch, True)
+        os.environ["GDEMU_TMP"] = scratch
+    loader = Loader(root, dump_dir=os.environ.get("GDEMU_DUMP"), permissive=(argv[1] in ("smoke", "first-launch")))
+    return {"test": cmd_test, "dump": cmd_dump, "check": cmd_check, "smoke": cmd_smoke,
+            "first-launch": cmd_first_launch}[argv[1]](loader, argv[2:])
 
 
 if __name__ == "__main__":

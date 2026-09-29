@@ -46,6 +46,10 @@ jobs:
           git diff --exit-code -- tests/golden
       - name: All test suites on the emulator
         run: python3 -m tools.gdemu test
+      - name: First launch as a new player (both tutorial paths)
+        run: |
+          python3 -m tools.gdemu first-launch
+          python3 -m tools.gdemu first-launch skip
       - name: Whole-app smoke run on engine stubs
         run: python3 -m tools.gdemu smoke --seeded --actions 150 --seed 1
 

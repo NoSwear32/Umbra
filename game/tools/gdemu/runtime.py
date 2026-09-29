@@ -2136,14 +2136,20 @@ KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_A, KEY_D, KEY_W, KEY_SPACE, KEY_ESCAPE, KEY_P, 
 
 # ------------------------------------------------------------------------------------ singletons
 PROJECT_ROOT = os.getcwd()
-USER_DIR = os.path.join(os.environ.get("GDEMU_TMP", "/tmp"), "gdemu_user")
+
+
+def _user_dir():
+    """user:// of the emulated app: <GDEMU_TMP>/gdemu_user, read at use time so the command line can pick a fresh one."""
+    import tempfile
+    return os.path.join(os.environ.get("GDEMU_TMP", tempfile.gettempdir()), "gdemu_user")
+
 
 
 def _path(p):
     if p.startswith("res://"):
         return os.path.join(PROJECT_ROOT, p[6:])
     if p.startswith("user://"):
-        return os.path.join(USER_DIR, p[7:])
+        return os.path.join(_user_dir(), p[7:])
     return p
 
 
