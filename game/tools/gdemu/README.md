@@ -50,6 +50,15 @@ arithmetic. On top of that a seeded random "monkey" plays the app:
 * `--seeded` first fills the profile (records, replays, unlocks, a custom character) through the real end-of-run
   pipeline, so lists and statistics render real data.
 
+After every action the monkey also checks invariants (leaderboards sorted, at most 20 entries and integer values;
+every setting has its declared type and stays inside its range; the selected character is unlocked; no negative
+statistics; no duplicate replay ids; input axes within [-1, 1] and zero while gameplay input is off; finite player
+state), and **every finished live run is re-simulated from the replay the recorder wrote and must reproduce the
+live result exactly** (score, floor, combos, jumps, rebounds, duration) — that ties `GameScene`'s fixed-step loop,
+`InputManager` sampling and `ReplayRecorder` to `ReplayPlayer`. A run submitted twice is a violation too. A fixed
+warm-up (one played and quit run, a replay watched and left with Back, hostile settings values) runs first when
+`--seeded` is given.
+
 Every Python-level exception is collected with a GDScript file/line trace. It is a *smoke test*: it finds the
 project's own runtime errors (missing keys, null dereferences, bad arguments, broken state transitions) but
 cannot tell whether something looks right, and because the stubs accept anything it can not find engine API
@@ -59,11 +68,18 @@ fade-out (fixed in `GameScene._on_replay_exit`).
 
 ## How much can the suites be trusted? (mutation check)
 
-Injecting single faults into copies of the GDScript and re-running everything is how the harness was checked:
-28 deliberate defects (off-by-one combo timeout, wrong rebound multiplier, RNG shift constant, inclusive/exclusive
-touch threshold, dead zone, missing landing tolerance, leaderboard trimming, replay version check, PNG signature,
-scroll start floor, combo exponent, theme length, safe-area scale, orientation lock, network permission, unlock threshold, missing flush, no pruning, stale replay links, kept autosave, missing
-art/audio/font ...) were all detected by at least one test. See `tools/gdemu/mutation_check.py`.
+Injecting single faults into copies of the GDScript and re-running everything is how the harness itself was checked.
+`python3 -m tools.gdemu.mutation_check` applies 28 deliberate defects — an off-by-one combo timeout, a weaker wall
+rebound, an RNG shift constant, an exclusive touch threshold, an ignored tilt dead zone, a missing landing
+tolerance, unchecked replay version and PNG signature, leaderboards that never trim, statistics that count practice
+runs, a wrong scroll start floor, combo exponent, theme length and safe-area scale, a lifted landscape lock, an added
+network permission, a deleted texture / music loop / font, an off-by-one unlock threshold, a missing flush after a
+run, replays that are never pruned or stay linked after deletion, an autosave that is not consumed, unlimited player
+names — and every one of them is detected by at least one test.
+
+`--smoke` runs four further faults in code only the smoke run executes (the live loop forgetting to record the
+axis, a run that can be finished twice, unclamped settings, an unsorted leaderboard); the monkey's invariants
+catch all four.
 
 ## Layout
 

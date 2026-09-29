@@ -64,7 +64,21 @@ MUTATIONS = [
 ]
 
 
-def run_one(name, rel, old, new):
+# faults in code that only the smoke run executes (game loop, replay exit, settings sliders)
+SMOKE_MUTATIONS = [
+    ("live loop forgets to record the axis", "src/view/game_scene.gd",
+     "recorder.record(n, q, jump)", "recorder.record(n, 0, jump)"),
+    ("a run can be finished twice", "src/view/game_scene.gd",
+     "if run == null or mode == Mode.REPLAY or _run_ended_handled:\n\t\treturn\n\t_run_ended_handled = true\n\tvar result: Dictionary = run.abandon()",
+     "if run == null or mode == Mode.REPLAY:\n\t\treturn\n\t_run_ended_handled = true\n\tvar result: Dictionary = run.abandon()"),
+    ("settings are not clamped", "src/autoload/settings_manager.gd",
+     "\t\t\tout = clampf(float(out), float(r[0]), float(r[1]))", "\t\t\tout = float(out)"),
+    ("leaderboard is not kept sorted", "src/data/local_leaderboard_provider.gd",
+     "list.insert(rank - 1, e.duplicate())", "list.append(e.duplicate())"),
+]
+
+
+def run_one(name, rel, old, new, smoke=False):
     tmp = tempfile.mkdtemp()
     try:
         for d in ("src", "tests", "tools", "resources", "assets"):
@@ -80,9 +94,14 @@ def run_one(name, rel, old, new):
                 return None, "mutation target not found"
             open(path, "w", encoding="utf-8").write(text.replace(old, new, 1))
         env = dict(os.environ, GDEMU_TMP=os.path.join(tmp, ".t"))
-        r = subprocess.run([sys.executable, "-m", "tools.gdemu", "test"], cwd=tmp, capture_output=True, text=True, env=env)
-        summary = [ln for ln in (r.stdout + r.stderr).splitlines() if ln.startswith("passed:")]
-        return r.returncode != 0, (summary[-1] if summary else (r.stdout + r.stderr)[-200:])
+        cmd = ["smoke", "--seeded", "--actions", "60", "--seed", "3"] if smoke else ["test"]
+        r = subprocess.run([sys.executable, "-m", "tools.gdemu"] + cmd, cwd=tmp, capture_output=True, text=True, env=env)
+        text = r.stdout + r.stderr
+        if smoke:
+            first = [ln for ln in text.splitlines() if ln.startswith("unique errors")]
+            return r.returncode != 0, (first[-1] if first else text[-200:])
+        summary = [ln for ln in text.splitlines() if ln.startswith("passed:")]
+        return r.returncode != 0, (summary[-1] if summary else text[-200:])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -92,8 +111,9 @@ def main():
         print("run this from the folder that contains project.godot")
         return 2
     survivors = []
-    for name, rel, old, new in MUTATIONS:
-        killed, info = run_one(name, rel, old, new)
+    smoke = "--smoke" in sys.argv
+    for name, rel, old, new in (SMOKE_MUTATIONS if smoke else MUTATIONS):
+        killed, info = run_one(name, rel, old, new, smoke)
         if killed is None:
             print("%-34s %s" % (name, info))
             survivors.append(name + " (target missing)")

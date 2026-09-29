@@ -35,7 +35,10 @@ class Opaque:
         return v
 
     def __setattr__(self, n, v):
-        self._attrs[n] = v
+        if n in self.__dict__:                 # real fields of the singleton subclasses (gravity_value, clip ...)
+            object.__setattr__(self, n, v)
+        else:
+            self._attrs[n] = v
 
     def __call__(self, *a, **k):
         return Opaque(self._name + "()")

@@ -10,6 +10,7 @@ transitions). It says nothing about how anything looks or feels.
     cd game && python3 -m tools.gdemu smoke [--actions N] [--seed S]
 """
 import collections
+import math
 import random
 import re
 import sys
@@ -76,6 +77,7 @@ class Invariants:
     def __init__(self, monkey):
         self.m = monkey
         self.replays_checked = 0
+        self._finished = set()
 
     def fail(self, message):
         sig = "INVARIANT: " + message.split(":")[0]
@@ -88,6 +90,11 @@ class Invariants:
         original = gm.finish_run
 
         def wrapped(result, replay):
+            key = (result["seed"], result["duration_ticks"], result["score"], result["highest_floor"])
+            if replay is not None and not result.get("debug_used", False) and not result.get("practice", False):
+                if key in self._finished:
+                    self.fail("run finished twice: seed %s, %s ticks, score %s was submitted again" % key[:3])
+                self._finished.add(key)
             out = original(result, replay)
             if replay is not None and not result.get("debug_used", False):     # debug teleports are not recorded
                 self.check_replay(result, replay)
@@ -253,8 +260,33 @@ class Monkey:
         ev.pressed = pressed
         self.guard("touch", rt.TREE.input, ev)
 
+    def play_burst_tilt(self, seconds):
+        """Tilt mode: sweep the device angle, tap anywhere to jump."""
+        inp = self.loader.ns["Input"]
+        t = 0.0
+        while t < seconds:
+            ang = math.radians(self.rng.uniform(-28.0, 28.0))
+            inp.gravity_value = rt.Vector3(9.81 * math.sin(ang), 9.81 * math.cos(ang) * 0.5, 9.81 * math.cos(ang) * 0.866)
+            dur = self.rng.uniform(0.1, 0.6)
+            self.frames(max(1, int(dur * 60)))
+            if self.rng.random() < 0.5:
+                self.touch(800.0, 300.0, True)
+                self.frames(2)
+                self.touch(800.0, 300.0, False)
+            t += dur
+
+    def tilt_run(self):
+        """A whole run in tilt mode (analog axis: exercises the replay quantisation), then back to touch."""
+        sm = self.loader.ns["SettingsManager"]
+        self.guard("calibrated", sm.set_value, "tilt_calibrated", True)
+        self.guard("tilt mode", sm.set_value, "control_mode", "tilt")
+        self.full_run(force_quit=self.rng.random() < 0.5)
+        self.guard("touch mode", sm.set_value, "control_mode", "touch")
+
     def play_burst(self, seconds):
         """Hold left / right with a finger, release to jump, for a while."""
+        if self.loader.ns["SettingsManager"].is_tilt_mode():
+            return self.play_burst_tilt(seconds)
         t = 0.0
         while t < seconds:
             side = self.rng.choice([130.0, 1470.0])
@@ -310,7 +342,7 @@ class Monkey:
         self.guard("quit", g.quit_to_menu)
         self.frames(20)
 
-    def full_run(self):
+    def full_run(self, force_quit=False):
         """A normal live run played with random holds until it ends (or a time limit), then the game-over screen."""
         g = self.game()
         if g is None:
@@ -321,9 +353,25 @@ class Monkey:
             if g.run is None or g.run.dead or g.mode == 0:
                 break
             self.play_burst(self.rng.uniform(2.0, 6.0))
+        if g.run is not None and g.mode != 0 and (force_quit or self.rng.random() < 0.7):
+            self.frames(30)
+            self.guard("quit to menu", g.quit_to_menu)        # an abandoned run is saved like a finished one;
+            #                                                   a run that already ended must not be saved twice
         self.frames(120)
 
-    def watch_replay(self):
+    def warmup(self):
+        """Fixed opening sequence, whatever the seed: one played run (checked against its replay), a replay watched
+        and left through Back, and hostile settings values (which must be sanitised)."""
+        self.full_run(force_quit=True)
+        self.tilt_run()
+        self.watch_replay(leave_with_back=True)
+        sm = self.loader.ns["SettingsManager"]
+        for key, val in (("vol_master", 9.0), ("touch_scale", -4.0), ("fps_limit", 999999), ("particles", 40),
+                         ("tilt_custom_deg", 1000.0), ("player_name", "x" * 60), ("control_mode", "banana"), ("touch_min_hold_ms", -5)):
+            self.guard("setting %s" % key, sm.set_value, key, val)
+            self.guard("invariants", self.invariants.check_all)
+
+    def watch_replay(self, leave_with_back=False):
         rm = self.loader.ns["ReplayManager"]
         g = self.game()
         metas = self.guard("list", rm.list_meta) or []
@@ -334,6 +382,11 @@ class Monkey:
         if not loaded or not loaded["ok"]:
             return
         self.guard("start replay", g.start_replay, loaded["replay"], self.rng.random() < 0.5)
+        if leave_with_back:
+            self.frames(90)
+            self.back()
+            self.frames(30)
+            return
         for _ in range(self.rng.randint(3, 12)):
             self.frames(self.rng.randint(5, 240))
             if self.rng.random() < 0.6:
@@ -382,7 +435,9 @@ class Monkey:
             ("control_mode", "tilt"), ("control_mode", "touch"), ("tilt_calibrated", True), ("tilt_preset", "high"),
             ("tilt_preset", "custom"), ("tilt_invert", True), ("touch_swap", True), ("touch_swap", False),
             ("touch_scale", 1.5), ("touch_opacity", 0.2), ("haptics", False), ("mute", True), ("mute", False),
-            ("reduced_effects", True), ("screen_shake", False), ("particles", 0), ("show_fps", True), ("fps_limit", 60)])
+            ("reduced_effects", True), ("screen_shake", False), ("particles", 0), ("show_fps", True), ("fps_limit", 60),
+            ("vol_master", 9.0), ("touch_scale", -4.0), ("fps_limit", 999999), ("particles", 40), ("tilt_custom_deg", 1000.0),
+            ("player_name", "x" * 60), ("control_mode", "banana"), ("touch_min_hold_ms", -5)])
         self.guard("setting %s" % key, sm.set_value, key, val)
 
     def back(self):
@@ -412,9 +467,11 @@ class Monkey:
             self.settings_tweak()
         elif r < 0.88:
             self.theme_tour()
-        elif r < 0.895:
+        elif r < 0.885:
             self.full_run()
-        elif r < 0.92:
+        elif r < 0.895:
+            self.tilt_run()
+        elif r < 0.93:
             self.watch_replay()
         elif r < 0.94:
             self.multitouch()
@@ -444,6 +501,8 @@ def run(loader, actions=400, seed=1, verbose=False, coverage=None, seeded=False)
     m.guard("main", rt.TREE.root.add_child, main)
     rt.TREE.current_scene = main
     m.frames(90)
+    if seeded:
+        m.warmup()
     for _ in range(actions):
         m.step()
     if coverage is not None:
