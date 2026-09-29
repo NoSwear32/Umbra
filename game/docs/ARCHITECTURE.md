@@ -96,6 +96,9 @@ doubles and the same operation order.
 * **Migration**: `SaveManager.migrations[n]` upgrades version *n* to *n + 1*; missing sections are filled with defaults;
   a file from a *newer* game version is never downgraded or wiped (unknown keys survive).
 * Saves are debounced (dirty flag + short timer) and flushed on pause, focus loss and exit.
+* **Test sandbox**: `SaveManager.enter_sandbox(dir)` redirects the profile, replay and character folders to a scratch
+  directory and starts from a fresh profile; `leave_sandbox()` restores the player's own data. `tests/test_flow.gd`
+  uses it to exercise the real managers without ever touching a real profile.
 
 ## Replays
 
@@ -138,5 +141,10 @@ new/same seed, invincibility, force game over, 15 FPS simulation. Any run that u
 
 ## Testing
 
-`tests/run_tests.gd` runs the suites in `tests/`; see [QA_CHECKLIST.md](QA_CHECKLIST.md) for how they map to the
-required test cases A–O and for the manual device checklist.
+`tests/run_tests.gd` runs the suites in `tests/` inside the engine; see [QA_CHECKLIST.md](QA_CHECKLIST.md) for how
+they map to the required test cases A–O and for the manual device checklist.
+
+`tools/gdemu` runs the same suites — and a whole-app monkey run on engine stubs — without the engine, by translating
+the GDScript to Python; see its README for what that does and does not prove. `GameManager.replay_save_delay`
+(0.45 s in the game, 0 in tests) is the one production knob that exists for testability: it makes the deferred
+replay write synchronous.

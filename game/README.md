@@ -106,6 +106,11 @@ game/
 | `python3 tools/gen_art.py [themes\|characters\|ui]` | regenerate themes, character sheets, logo and icons |
 | `python3 tools/gen_font.py` | regenerate the game's own display typeface (`assets/fonts/spire_display.ttf`) |
 
+**Continuous integration.** `.github/workflows/spire-sprint.yml` (repository root; runs only for changes under
+`game/`) has two jobs: the static checks plus the emulated test run, and — the one that matters for "does it work
+in the engine" — the same suites inside the official Godot 4.3 headless build, plus the API-based static checker
+against that engine's own `extension_api.json`. Delete the workflow if you do not want it.
+
 The art and audio generators need Python 3 with `numpy` and `Pillow`, the font generator additionally `fonttools` and
 `shapely`; `gdcheck.py` and the linters need `gdtoolkit`.
 

@@ -109,7 +109,8 @@ def cmd_smoke(loader, args):
             seed = int(next(it))
     cov = smoke.LineCoverage(loader) if lines or detail else None
     m = smoke.run(loader, actions, seed, coverage=cov, seeded="--seeded" in args)
-    print("actions: %d   frames: %d   screens visited: %s" % (m.actions, rt.TREE.frames, ", ".join(sorted(m.screens_seen)) or "-"))
+    print("actions: %d   frames: %d   finished runs re-simulated from their replay: %d   screens visited: %s" % (
+        m.actions, rt.TREE.frames, m.invariants.replays_checked, ", ".join(sorted(m.screens_seen)) or "-"))
     if "--coverage" in args:
         print("controls pressed (%d distinct):" % len(m.pressed))
         for k, v in m.pressed.most_common():

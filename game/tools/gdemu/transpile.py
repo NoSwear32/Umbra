@@ -563,7 +563,7 @@ class Gen:
         if d == "class_var_empty":
             self.emit(ind, "self.%s = None" % attr, v)
         elif d == "class_var_typed":
-            self.emit(ind, "self.%s = %s" % (attr, DEFAULTS.get(str(v.children[1]).split("[")[0], "None") if "[" not in str(v.children[1]) else DEFAULTS.get(str(v.children[1]).split("[")[0], "None")), v)
+            self.emit(ind, "self.%s = %s" % (attr, DEFAULTS.get(str(v.children[1]).split("[")[0], "None")), v)
         else:
             typ = str(v.children[1]) if d == "class_var_typed_assgnd" else None
             val = self.ex(v.children[-1], ctx)
@@ -586,17 +586,13 @@ class Gen:
             ename = None
             body = e.children[0]
         pairs = []
-        nextv = "0"
-        cur = -1
         for el in body.children:
             if not (isinstance(el, Tree) and el.data == "enum_element"):
                 continue
             n = str(el.children[0])
             if len(el.children) > 1:
-                v = self.ex(el.children[1], ctx)
-                self.emit(ind, "_ev = %s" % v, el)
+                self.emit(ind, "_ev = %s" % self.ex(el.children[1], ctx), el)
             else:
-                self.emit(ind, "_ev = (_ev + 1) if '_ev' in dir() else 0", el) if False else None
                 self.emit(ind, "_ev = %s" % ("0" if not pairs else "_ev + 1"), el)
             self.emit(ind, "cls.%s = _ev" % mangle_attr(n), el)
             pairs.append(n)
@@ -867,7 +863,7 @@ class Gen:
             return "True"
         if d == "var_capture_pattern":
             py = ctx.declare(str(p.children[0]), None, "dyn")
-            return "(_bind(lambda: None) or True)" if False else "True"
+            return "((%s := %s) is not _U)" % (py, subj)          # binds the subject, always matches
         if d == "attr_pattern":
             # Enum.VALUE / Class.CONST written as a pattern: same as the expression
             g = Tree("getattr", list(p.children), p.meta)
@@ -1141,7 +1137,6 @@ class Gen:
     def x_content_test(self, n, ctx):
         a = self.ex(n.children[0], ctx)
         rest = n.children[1:]
-        out = a
         i = 0
         cur = a
         while i < len(rest):

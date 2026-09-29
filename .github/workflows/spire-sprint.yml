@@ -1,0 +1,75 @@
+name: Spire Sprint (Godot game)
+
+# Runs only for changes in game/ (the Next.js app in the repository root is unaffected).
+# Two independent jobs:
+#   * emulated  - static checks and the whole test suite on the GDScript emulator (tools/gdemu); no engine needed
+#   * godot     - the same suites inside the real Godot engine (official 4.3 release), plus the API-based static
+#                 checker against that engine's own extension_api.json
+# The engine job is the one that turns "checked without the engine" into "checked by the engine".
+
+on:
+  push:
+    paths:
+      - "game/**"
+      - ".github/workflows/spire-sprint.yml"
+  pull_request:
+    paths:
+      - "game/**"
+      - ".github/workflows/spire-sprint.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: game
+
+jobs:
+  emulated:
+    name: Static checks + tests on the GDScript emulator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install tools
+        run: pip install gdtoolkit==4.5.0 pillow fonttools
+      - name: gdparse and gdlint
+        run: |
+          gdparse $(find src tests -name '*.gd')
+          gdlint src tests
+      - name: Golden vectors are current
+        run: |
+          python3 tools/reference/gen_golden.py > /dev/null
+          git diff --exit-code -- tests/golden
+      - name: All test suites on the emulator
+        run: python3 -m tools.gdemu test
+      - name: Whole-app smoke run on engine stubs
+        run: python3 -m tools.gdemu smoke --seeded --actions 150 --seed 1
+
+  godot:
+    name: Godot 4.3 headless tests (real engine)
+    runs-on: ubuntu-latest
+    env:
+      GODOT_VERSION: "4.3"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Download Godot (official release from godotengine/godot-builds)
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL -o godot.zip "https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          sudo mv "Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          godot --version
+      - name: Import the project and run every test suite
+        run: tools/run_tests.sh godot
+      - name: Static checker against this engine's own API dump
+        run: |
+          pip install gdtoolkit==4.5.0
+          godot --headless --path . --dump-extension-api
+          python3 tools/gdcheck.py --api extension_api.json --project . src tests

@@ -66,6 +66,103 @@ def make_pack_text(loader, pack_id="monkey_fox"):
         "sheet_png_base64": base64.b64encode(buf.getvalue()).decode("ascii")})
 
 
+class Invariants:
+    """Consistency rules that must hold after every action, and the replay contract for every finished run:
+    re-simulating the recorded inputs reproduces the live result."""
+
+    RESULT_KEYS = ("score", "highest_floor", "best_combo_floors", "best_combo_jumps", "duration_ticks", "jumps",
+                   "wall_rebounds", "combos_completed", "combo_jumps")
+
+    def __init__(self, monkey):
+        self.m = monkey
+        self.replays_checked = 0
+
+    def fail(self, message):
+        sig = "INVARIANT: " + message.split(":")[0]
+        if sig not in self.m.errors:
+            self.m.errors[sig] = [0, "INVARIANT VIOLATED: " + message, "after %d actions" % self.m.actions]
+        self.m.errors[sig][0] += 1
+
+    def hook_finish_run(self):
+        gm = self.m.loader.ns["GameManager"]
+        original = gm.finish_run
+
+        def wrapped(result, replay):
+            out = original(result, replay)
+            if replay is not None and not result.get("debug_used", False):     # debug teleports are not recorded
+                self.check_replay(result, replay)
+            return out
+        gm.finish_run = wrapped
+
+    def check_replay(self, result, replay):
+        ns = self.m.loader.ns
+        player = ns["ReplayPlayer"](replay)
+        if player.incompatible or player.tuning_mismatch:
+            self.fail("replay contract: recorded replay is incompatible (%s / %s)" % (player.incompatible, player.tuning_mismatch))
+            return
+        again = player.simulate_all()
+        self.replays_checked += 1
+        for key in self.RESULT_KEYS:
+            if again[key] != result[key]:
+                self.fail("replay contract: '%s' differs between the live run (%s) and its replay (%s), seed %s, %d ticks" % (
+                    key, result[key], again[key], result["seed"], result["duration_ticks"]))
+                return
+
+    def check_all(self):
+        ns = self.m.loader.ns
+        sm = ns["SaveManager"]
+        for cat in ("score", "floor", "combo"):
+            entries = sm.section("leaderboards").get(cat, [])
+            if len(entries) > 20:
+                self.fail("leaderboard size: '%s' holds %d entries" % (cat, len(entries)))
+            values = []
+            for e in entries:
+                v = e.get(cat)
+                if type(v) is not int:
+                    self.fail("leaderboard types: '%s' entry value is %r" % (cat, v))
+                else:
+                    values.append(v)
+            if values != sorted(values, reverse=True):
+                self.fail("leaderboard order: '%s' is not sorted best-first" % cat)
+        settings = ns["SettingsManager"]
+        cls = type(settings)
+        for key, default in cls.DEFAULTS.items():
+            v = settings.get_value(key)
+            if type(v) is not type(default):
+                self.fail("setting type: %s is %r (default %r)" % (key, v, default))
+                continue
+            rng = cls.RANGES.get(key)
+            if rng is not None and not (rng[0] <= v <= rng[1]):
+                self.fail("setting range: %s = %r outside %r" % (key, v, list(rng)))
+        cm = ns["CharacterManager"]
+        if not cm.is_unlocked(cm.selected_id):
+            self.fail("character: '%s' is selected but locked" % cm.selected_id)
+        for k, v in sm.section("stats").items():
+            if isinstance(v, (int, float)) and v < 0:
+                self.fail("statistics: %s is negative (%r)" % (k, v))
+        ids = [str(mm.get("id")) for mm in sm.array_section("replays") if isinstance(mm, dict)]
+        if len(ids) != len(set(ids)):
+            self.fail("replay index: duplicate ids")
+        im = ns["InputManager"]
+        axis = im.sample_axis()
+        if not (-1.0 <= axis <= 1.0):
+            self.fail("input: axis %r out of range" % axis)
+        if not im.gameplay_enabled and axis != 0.0:
+            self.fail("input: axis %r while gameplay input is disabled" % axis)
+        tilt = ns["SensorManager"].tilt.axis
+        if not (-1.0 <= tilt <= 1.0):
+            self.fail("tilt: axis %r out of range" % tilt)
+        game = self.m.game()
+        if game is not None and game.run is not None:
+            p = game.run.player
+            for name in ("x", "y", "vx", "vy"):
+                v = getattr(p, name)
+                if v != v or v in (float("inf"), float("-inf")):
+                    self.fail("player state: %s is %r" % (name, v))
+            if not (0.0 <= p.x <= game.run.tuning.tower_width):
+                self.fail("player state: x = %r outside the tower" % p.x)
+
+
 class Monkey:
     def __init__(self, loader, seed=1):
         self.loader = loader
@@ -77,6 +174,7 @@ class Monkey:
         self.log = []
         self.pressed = collections.Counter()
         self.modes = collections.Counter()
+        self.invariants = Invariants(self)
 
     # ---- safe execution
     def guard(self, label, fn, *args):
@@ -212,6 +310,19 @@ class Monkey:
         self.guard("quit", g.quit_to_menu)
         self.frames(20)
 
+    def full_run(self):
+        """A normal live run played with random holds until it ends (or a time limit), then the game-over screen."""
+        g = self.game()
+        if g is None:
+            return
+        self.guard("start run", g.start_run)
+        self.frames(5)
+        for _ in range(45):                                   # at most a few minutes of game time
+            if g.run is None or g.run.dead or g.mode == 0:
+                break
+            self.play_burst(self.rng.uniform(2.0, 6.0))
+        self.frames(120)
+
     def watch_replay(self):
         rm = self.loader.ns["ReplayManager"]
         g = self.game()
@@ -301,13 +412,16 @@ class Monkey:
             self.settings_tweak()
         elif r < 0.88:
             self.theme_tour()
-        elif r < 0.91:
+        elif r < 0.895:
+            self.full_run()
+        elif r < 0.92:
             self.watch_replay()
         elif r < 0.94:
             self.multitouch()
         else:
             self.frames(self.rng.randint(1, 120))
         self.frames(self.rng.randint(1, 4))
+        self.guard("invariants", self.invariants.check_all)
         cur = self.guard("id", self.loader.ns["UIManager"].current_id)
         if cur:
             self.screens_seen.add(cur)
@@ -324,7 +438,8 @@ def run(loader, actions=400, seed=1, verbose=False, coverage=None, seeded=False)
         coverage.start()
     loader.boot("all")
     if seeded:
-        m.guard("seed profile", seed_profile, loader)
+        m.guard("seed profile", seed_profile, loader)      # synthetic results: not part of the replay contract
+    m.invariants.hook_finish_run()
     main = loader.instantiate("res://src/main.gd")
     m.guard("main", rt.TREE.root.add_child, main)
     rt.TREE.current_scene = main
