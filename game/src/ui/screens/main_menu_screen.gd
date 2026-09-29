@@ -17,12 +17,17 @@ func build() -> void:
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	left.alignment = BoxContainer.ALIGNMENT_CENTER
 	root.add_child(left)
-	var t1: Label = UIKit.label("SPIRE", UIKit.FS_TITLE + 16, UIKit.C_ACCENT, HORIZONTAL_ALIGNMENT_CENTER)
-	t1.add_theme_constant_override("outline_size", 12)
-	left.add_child(t1)
-	var t2: Label = UIKit.label("SPRINT", UIKit.FS_TITLE + 16, UIKit.C_CYAN, HORIZONTAL_ALIGNMENT_CENTER)
-	t2.add_theme_constant_override("outline_size", 12)
-	left.add_child(t2)
+	var logo: TextureRect = UIKit.logo_rect(360.0)
+	if logo != null:
+		logo.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		left.add_child(logo)
+	else:
+		var t1: Label = UIKit.label("SPIRE", UIKit.FS_TITLE + 16, UIKit.C_ACCENT, HORIZONTAL_ALIGNMENT_CENTER)
+		t1.add_theme_constant_override("outline_size", 12)
+		left.add_child(t1)
+		var t2: Label = UIKit.label("SPRINT", UIKit.FS_TITLE + 16, UIKit.C_CYAN, HORIZONTAL_ALIGNMENT_CENTER)
+		t2.add_theme_constant_override("outline_size", 12)
+		left.add_child(t2)
 	left.add_child(UIKit.label("Build speed. Leap floors. Chain combos.", UIKit.FS_BODY, UIKit.C_DIM, HORIZONTAL_ALIGNMENT_CENTER))
 	left.add_child(UIKit.spacer(10))
 	_preview = CharacterPreview.new(Vector2(230, 230))

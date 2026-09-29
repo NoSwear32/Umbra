@@ -31,6 +31,13 @@ func build() -> void:
 	cb.add_child(UIKit.wrap_label("Engine: Godot Engine 4 (MIT licence) - godotengine.org", UIKit.FS_BODY, UIKit.C_TEXT))
 	cb.add_child(UIKit.wrap_label("Characters: Pip, Bolt, Moss, Nova, Wraith, Ember and Zenith are original creations.", UIKit.FS_BODY, UIKit.C_TEXT))
 
+	var lic: Dictionary = UIKit.section_card("Licences")
+	box.add_child(lic["card"])
+	var lb: VBoxContainer = lic["body"]
+	lb.add_child(UIKit.wrap_label("Spire Sprint is built with the Godot Engine, which is free software. Text is drawn with the engine's built-in font.", UIKit.FS_BODY, UIKit.C_TEXT))
+	lb.add_child(UIKit.button("GODOT ENGINE LICENCE", _on_engine_licence, "secondary", Vector2(0, 64)))
+	lb.add_child(UIKit.button("THIRD-PARTY COMPONENTS", _on_components, "secondary", Vector2(0, 64)))
+
 	var orig: Dictionary = UIKit.section_card("Originality and privacy")
 	box.add_child(orig["card"])
 	var ob: VBoxContainer = orig["body"]
@@ -47,6 +54,22 @@ func _process(delta: float) -> void:
 		_tap_timer -= delta
 		if _tap_timer <= 0.0:
 			_tap_count = 0
+
+
+func _on_engine_licence() -> void:
+	UIManager.text_viewer("Godot Engine licence", Engine.get_license_text())
+
+
+func _on_components() -> void:
+	var names: PackedStringArray = PackedStringArray()
+	for entry in Engine.get_copyright_info():
+		var component: Dictionary = entry
+		names.append(String(component.get("name", "")))
+	var licences: PackedStringArray = PackedStringArray()
+	for key in Engine.get_license_info():
+		licences.append(String(key))
+	var text: String = "Components bundled with the engine:\n%s\n\nLicences that apply:\n%s" % [", ".join(names), ", ".join(licences)]
+	UIManager.text_viewer("Third-party components", text)
 
 
 func _on_version_tap() -> void:

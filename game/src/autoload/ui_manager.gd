@@ -323,3 +323,19 @@ func info(title: String, message: String, button_text: String = "OK") -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_child(UIKit.button(button_text, close_dialog, "primary", Vector2(280, 72)))
 	body.add_child(row)
+
+
+## Scrollable text (licences and other long documents), dismissed with one button.
+func text_viewer(title: String, message: String, button_text: String = "CLOSE") -> void:
+	var d: Dictionary = _make_dialog(title)
+	var body: VBoxContainer = d["body"]
+	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(0, 400)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body.add_child(scroll)
+	var label: Label = UIKit.wrap_label(message, UIKit.FS_SMALL, UIKit.C_TEXT)
+	scroll.add_child(label)
+	var row: HBoxContainer = UIKit.hbox(18)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_child(UIKit.button(button_text, close_dialog, "primary", Vector2(280, 72)))
+	body.add_child(row)

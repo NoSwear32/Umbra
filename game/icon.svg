@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0c0f22"/>
+      <stop offset="1" stop-color="#3b1f6e"/>
+    </linearGradient>
+    <linearGradient id="tower" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe08a"/>
+      <stop offset="1" stop-color="#ff8c2b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.75" r="0.6">
+      <stop offset="0" stop-color="#ff8c42" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ff8c42" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="128" height="128" rx="26" fill="url(#bg)"/>
+  <rect width="128" height="128" rx="26" fill="url(#glow)"/>
+  <path d="M28 96 C 44 88, 60 84, 74 74 S 96 56, 104 36" fill="none" stroke="#1a1030" stroke-width="9" stroke-linecap="round"/>
+  <path d="M28 96 C 44 88, 60 84, 74 74 S 96 56, 104 36" fill="none" stroke="#9ff6ff" stroke-width="5.5" stroke-linecap="round"/>
+  <path d="M43 104 h42 l-6 -26 h-30 z M49 78 h30 l-5 -22 h-20 z M55 56 h18 l-5 -18 h-8 z" fill="url(#tower)" stroke="#1a1030" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M60 38 h8 l-4 -20 z" fill="#ffe08a" stroke="#1a1030" stroke-width="3" stroke-linejoin="round"/>
+  <rect x="20" y="70" width="24" height="7" rx="3" fill="#9ff6ff" stroke="#1a1030" stroke-width="2.5"/>
+  <rect x="86" y="52" width="24" height="7" rx="3" fill="#ff8c2b" stroke="#1a1030" stroke-width="2.5"/>
+  <path d="M64 6 l3 8 8 3 -8 3 -3 8 -3 -8 -8 -3 8 -3 z" fill="#fff7d6" stroke="#1a1030" stroke-width="2" stroke-linejoin="round"/>
+</svg>

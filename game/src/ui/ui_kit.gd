@@ -24,7 +24,34 @@ const FS_SMALL: int = 21
 
 const BUTTON_H: float = 76.0
 
+const LOGO_PATH: String = "res://assets/art/ui/logo.png"
+
 static var _theme: Theme = null
+static var _logo: Texture2D = null
+static var _logo_loaded: bool = false
+
+
+## The logotype, or null when the file is missing (screens then fall back to a text title).
+static func logo_texture() -> Texture2D:
+	if not _logo_loaded:
+		_logo_loaded = true
+		if ResourceLoader.exists(LOGO_PATH):
+			_logo = load(LOGO_PATH) as Texture2D
+	return _logo
+
+
+## A TextureRect showing the logo at the given width (aspect ratio kept), or null without the file.
+static func logo_rect(width: float) -> TextureRect:
+	var tex: Texture2D = logo_texture()
+	if tex == null:
+		return null
+	var r: TextureRect = TextureRect.new()
+	r.texture = tex
+	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	r.custom_minimum_size = Vector2(width, width * float(tex.get_height()) / float(tex.get_width()))
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return r
 
 
 # ---------------------------------------------------------------------------

@@ -33,6 +33,7 @@ var _last_floor: int = -1
 var _last_combo_jumps: int = -1
 var _last_combo_floors: int = -1
 var _score_tween: Tween = null
+var _next_danger_beep_ms: int = 0
 var _tuning: GameTuning
 
 
@@ -144,6 +145,7 @@ func reset() -> void:
 	_banner.modulate.a = 0.0
 	_banner_sub.modulate.a = 0.0
 	danger.set_danger(0.0)
+	_next_danger_beep_ms = 0
 	_layout()
 
 
@@ -196,6 +198,12 @@ func update_from_run(run: RunManager) -> void:
 		var gap: float = run.player.y - run.scroll.cam_bottom
 		d = clampf(1.0 - gap / 230.0, 0.0, 1.0)
 	danger.set_danger(d)
+	if d > 0.5:
+		# warning beeps that get faster, higher and louder the closer the kill line is
+		var now_ms: int = Time.get_ticks_msec()
+		if now_ms >= _next_danger_beep_ms:
+			_next_danger_beep_ms = now_ms + int(lerpf(750.0, 320.0, d))
+			AudioManager.play_sfx("danger", lerpf(0.95, 1.2, d), lerpf(-16.0, -7.0, d))
 	if _fps_label.visible:
 		_fps_label.text = "%d FPS" % int(Engine.get_frames_per_second())
 

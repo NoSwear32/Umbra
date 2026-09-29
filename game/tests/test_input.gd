@@ -23,6 +23,16 @@ class SimWatcher:
 		jumps += 1
 
 
+## The real InputManager script, detached from the scene tree, with the control mode fixed by
+## the test (so no user setting is read or written).
+class ModeInput:
+	extends "res://src/autoload/input_manager.gd"
+	var tilt_mode: bool = true
+
+	func is_tilt_mode() -> bool:
+		return tilt_mode
+
+
 func run(t: TestContext) -> void:
 	_touch_basics(t)
 	_touch_taps(t)
@@ -35,6 +45,7 @@ func run(t: TestContext) -> void:
 	_tilt_filter(t)
 	_tilt_calibration(t)
 	_tilt_safety(t)
+	_input_manager(t)
 	_chain(t)
 
 
@@ -426,6 +437,100 @@ func _tilt_safety(t: TestContext) -> void:
 	k.max_input = 0.6
 	t.near(k.feed(_grav(60.0), DT_SENSOR), 0.6, 1e-9, "the clamp limits the right side")
 	t.near(k.feed(_grav(-60.0), 0.5), -0.6, 1e-9, "and the left side")
+
+
+# ---------------------------------------------------------------------------
+# InputManager: tilt-mode taps (tests M and N) and the touch-mode wiring
+# ---------------------------------------------------------------------------
+func _screen_touch(index: int, pos: Vector2, pressed: bool, canceled: bool = false) -> InputEventScreenTouch:
+	var e: InputEventScreenTouch = InputEventScreenTouch.new()
+	e.index = index
+	e.position = pos
+	e.pressed = pressed
+	e.canceled = canceled
+	return e
+
+
+func _input_manager(t: TestContext) -> void:
+	t.suite("input manager: tilt-mode taps (tests M and N)")
+	var im: ModeInput = ModeInput.new()
+	im.tilt_mode = true
+	im.gameplay_enabled = true
+	var signals: JumpCounter = JumpCounter.new()
+	im.jump_input.connect(signals.on_jump)
+	var middle: Vector2 = Vector2(640.0, 360.0)
+	t.check(not im.consume_jump(), "no jump without a tap")
+	im._input(_screen_touch(0, middle, true))
+	t.check(im.consume_jump(), "M: a tap anywhere on the play area requests a jump")
+	t.check(not im.consume_jump(), "M: and exactly one (the request is consumed)")
+	t.eq(signals.count, 1, "M: one feedback signal")
+	im._input(_screen_touch(0, middle, false))
+	t.check(not im.consume_jump(), "M: lifting the finger does not jump again")
+	im._input(_screen_touch(0, Vector2(120.0, 600.0), true))
+	t.check(im.consume_jump(), "M: taps over the (hidden) touch buttons area also jump in tilt mode")
+	im._input(_screen_touch(0, middle, true, true))
+	t.check(not im.consume_jump(), "a cancelled touch never jumps")
+	# two quick taps are two separate jump requests
+	im._input(_screen_touch(1, middle, true))
+	im._input(_screen_touch(2, middle + Vector2(30.0, 0.0), true))
+	t.check(im.consume_jump(), "two taps in one frame ask for a jump")
+	t.check(not im.consume_jump(), "but the request is a flag, not a counter: the simulation sees one")
+
+	# N: the pause button (and any registered UI rectangle) never jumps
+	var pause_rect: Rect2 = Rect2(1180.0, 24.0, 74.0, 74.0)
+	im.register_block_rect("hud_pause", pause_rect)
+	im._input(_screen_touch(0, pause_rect.get_center(), true))
+	t.check(not im.consume_jump(), "N: tapping Pause does not jump")
+	im._input(_screen_touch(0, Vector2(1174.0, 60.0), true))
+	t.check(not im.consume_jump(), "N: the blocked area is a little larger than the button")
+	im._input(_screen_touch(0, Vector2(1090.0, 60.0), true))
+	t.check(im.consume_jump(), "N: a tap well away from the button jumps")
+	im.unregister_block_rect("hud_pause")
+	im._input(_screen_touch(0, pause_rect.get_center(), true))
+	t.check(im.consume_jump(), "N: with the button gone (menus) the area is normal again")
+
+	# while gameplay is disabled (pause menu, game over) nothing jumps and nothing is left latched
+	im.gameplay_enabled = false
+	im._input(_screen_touch(0, middle, true))
+	t.check(not im.consume_jump(), "taps do nothing while gameplay input is off")
+	im.gameplay_enabled = true
+	t.check(not im.consume_jump(), "and nothing is remembered for later")
+	im.free()
+
+	t.suite("input manager: touch mode wiring")
+	var tm: ModeInput = ModeInput.new()
+	tm.tilt_mode = false
+	tm.gameplay_enabled = true
+	# InputManager._ready() connects this in the game; the detached test instance does it by hand
+	tm.touch.jump_requested.connect(tm._on_touch_jump)
+	tm.touch.set_zones(Rect2(20.0, 500.0, 200.0, 200.0), Rect2(1060.0, 500.0, 200.0, 200.0))
+	tm.touch.min_hold = 0.0
+	t.eq(tm.sample_axis(), 0.0, "idle: no movement")
+	tm._input(_screen_touch(0, LEFT_POINT, true))
+	t.eq(tm.sample_axis(), -1.0, "holding the left button moves left")
+	t.check(not tm.consume_jump(), "pressing a button does not jump")
+	tm._input(_screen_touch(0, LEFT_POINT, false))
+	t.check(tm.consume_jump(), "K: releasing it requests one jump")
+	t.check(not tm.consume_jump(), "K: exactly one")
+	t.eq(tm.sample_axis(), 0.0, "and stops the movement")
+	tm._input(_screen_touch(0, middle, true))
+	t.check(not tm.consume_jump(), "a tap outside the buttons does nothing in touch mode")
+	tm.touch.min_hold = 60.0
+	tm._input(_screen_touch(1, RIGHT_POINT, true))
+	tm._input(_screen_touch(1, RIGHT_POINT, false))
+	t.check(not tm.consume_jump(), "a release before the minimum hold time does not jump")
+	tm.touch.min_hold = 0.0
+	tm._input(_screen_touch(1, RIGHT_POINT, true))
+	tm._input(_screen_touch(1, RIGHT_POINT, false))
+	t.check(tm._jump_latched, "a jump request waits for the next simulation tick")
+	tm.clear_state()
+	t.check(not tm.consume_jump(), "clearing the input state (resume after pause) drops a pending jump")
+	tm._input(_screen_touch(1, RIGHT_POINT, true))
+	tm.gameplay_enabled = false
+	tm.touch.set_enabled(false)
+	tm._input(_screen_touch(1, RIGHT_POINT, false))
+	t.check(not tm.consume_jump(), "disabling gameplay input (pause) never turns a held finger into a jump")
+	tm.free()
 
 
 # ---------------------------------------------------------------------------

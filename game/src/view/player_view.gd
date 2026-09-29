@@ -213,7 +213,7 @@ func _update_squash(p: PlayerController, delta: float, _ratio: float) -> void:
 	sprite.rotation = 0.0 if _dead else _lean
 
 
-func _update_scarf(delta: float, _ratio: float, _vel: Vector2) -> void:
+func _update_scarf(delta: float, ratio: float, _vel: Vector2) -> void:
 	var anchor: Vector2 = position + Vector2(-float(_facing) * 4.0, -tuning.player_height * 0.68)
 	if not _scarf_ready:
 		for i in range(SCARF_POINTS):

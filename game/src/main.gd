@@ -37,12 +37,17 @@ func _show_splash() -> void:
 	box.add_theme_constant_override("separation", 6)
 	_splash_layer.add_child(box)
 	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var t1: Label = UIKit.label("SPIRE", 132, UIKit.C_ACCENT, HORIZONTAL_ALIGNMENT_CENTER)
-	t1.add_theme_constant_override("outline_size", 14)
-	box.add_child(t1)
-	var t2: Label = UIKit.label("SPRINT", 132, UIKit.C_CYAN, HORIZONTAL_ALIGNMENT_CENTER)
-	t2.add_theme_constant_override("outline_size", 14)
-	box.add_child(t2)
+	var logo: TextureRect = UIKit.logo_rect(600.0)
+	if logo != null:
+		logo.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		box.add_child(logo)
+	else:
+		var t1: Label = UIKit.label("SPIRE", 132, UIKit.C_ACCENT, HORIZONTAL_ALIGNMENT_CENTER)
+		t1.add_theme_constant_override("outline_size", 14)
+		box.add_child(t1)
+		var t2: Label = UIKit.label("SPRINT", 132, UIKit.C_CYAN, HORIZONTAL_ALIGNMENT_CENTER)
+		t2.add_theme_constant_override("outline_size", 14)
+		box.add_child(t2)
 	box.add_child(UIKit.label("An endless climb", UIKit.FS_H2, UIKit.C_DIM, HORIZONTAL_ALIGNMENT_CENTER))
 	box.modulate.a = 0.0
 	var tw: Tween = create_tween()
