@@ -185,6 +185,9 @@ func restart_run() -> void:
 func handle_back() -> bool:
 	match mode:
 		Mode.MENU:
+			if game_over.visible:  # the results of a run, shown again after watching its replay
+				quit_to_menu()
+				return true
 			return false
 		Mode.LIVE, Mode.TUTORIAL:
 			if game_over.visible:

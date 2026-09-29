@@ -65,6 +65,7 @@ func _on_back() -> void:
 
 func _on_tab(index: int) -> void:
 	AudioManager.play_click()
+	_sync_widgets()  # the same setting appears on two tabs (haptics): never show a stale copy
 	_show_tab(index)
 
 

@@ -12,9 +12,12 @@ python3 -m tools.gdemu test     # all suites in tests/ (same list as tests/run_t
 python3 -m tools.gdemu test physics input     # only some suites
 python3 -m tools.gdemu check    # transpile every script under src/ and list what it cannot resolve
 python3 -m tools.gdemu first-launch [skip]   # the very first launch as a new player plays it (selector, menu, tutorial)
+python3 -m tools.gdemu navigation           # what Back does in every context (menus, pause, settings over a paused run, results, replay)
+python3 -m tools.gdemu lifecycle            # one run from the first jump to the results, records, replay file, rename, watch, restart and quit
 python3 -m tools.gdemu smoke --seeded --actions 600 --seed 7    # boot the whole app on engine stubs and press buttons
 python3 -m tools.gdemu smoke --lines --detail game_scene.gd     # ... with line coverage (slow), missed lines of one file
 python3 -m tools.gdemu.mutation_check    # inject faults into copies of the project; the suites must notice each
+python3 -m tools.gdemu.mutation_check --smoke | --lifecycle   # the same for faults only the monkey run / the scripted run flow can see
 python3 -m tools.gdemu dump res://src/core/player_controller.gd    # show the generated Python
 GDEMU_DUMP=/tmp/gen python3 -m tools.gdemu test   # keep the generated Python of every script
 ```
@@ -68,6 +71,20 @@ resumed. It checks the expected screens and states at every step. (It found that
 panel and the results panel could be on screen at the same time while the practice tower kept rising; the practice
 run now stands still behind the panel.)
 
+`navigation` scripts the Android Back button through every context — main menu (asks before leaving), each sub
+screen, nested screens, a live run (pause / resume), Settings and calibration opened from the pause menu, the results,
+a watched replay. It found that Back inside Settings-from-the-pause-menu resumed the run *behind* the settings
+screen (the game was asked before the open screen), that Back did nothing on root screens opened from the game, and
+that Back did nothing on the results shown after a replay; all three are fixed in `UIManager.back()` /
+`GameScene.handle_back()`. The monkey also checks overlay invariants after every action (results / pause menu /
+replay controls / tutorial panel never on screen together, gameplay input off behind them, no menu screen open over a
+running unpaused game).
+
+`lifecycle` plays one complete run through the real screens and autoloads: the run ends, the results panel, record banner,
+leaderboard entry and replay file appear, the rename prompt works, the replay can be watched (at 4x, to its end, again, and left
+with EXIT back to the results), PLAY AGAIN starts a fresh tower, RESTART asks only when the run is worth keeping, and QUIT TO MENU
+from a live run saves it and shows the toast.
+
 Every Python-level exception is collected with a GDScript file/line trace. It is a *smoke test*: it finds the
 project's own runtime errors (missing keys, null dereferences, bad arguments, broken state transitions) but
 cannot tell whether something looks right, and because the stubs accept anything it can not find engine API
@@ -89,6 +106,12 @@ names — and every one of them is detected by at least one test.
 `--smoke` runs four further faults in code only the smoke run executes (the live loop forgetting to record the
 axis, a run that can be finished twice, unclamped settings, an unsorted leaderboard); the monkey's invariants
 catch all four.
+
+`--lifecycle` runs eight faults in the player-facing run flow that only the scripted `lifecycle` check walks
+through (RESTART that never asks, quitting a run without saving it, every new run on the same tower, a replay
+watched from the results that leaves for the menu, WATCH AGAIN forgetting where it came from, a rename prompt that
+ignores the typed name, the pause button or gameplay input left on under the results); all eight are detected, each
+with a readable "FAIL ..." line.
 
 ## Layout
 

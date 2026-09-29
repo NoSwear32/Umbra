@@ -6,6 +6,8 @@ gdemu command line.
     python3 -m tools.gdemu check                transpile + load every script under src/ and report gaps
     python3 -m tools.gdemu smoke [--actions N] [--seed S]   boot the whole app on engine stubs and press buttons
     python3 -m tools.gdemu first-launch [skip]              the very first launch as a new player plays it
+    python3 -m tools.gdemu navigation                       what Back does in every context (menus, pause, results, replay)
+    python3 -m tools.gdemu lifecycle                        a run to its end: results, rename, watch, play again, restart, quit
 
 Run from the project directory (the folder that contains project.godot).
 gdemu executes the project's GDScript logic under CPython with an emulated runtime. It is NOT the
@@ -137,8 +139,26 @@ def cmd_first_launch(loader, args):
     return 1 if problems else 0
 
 
+def cmd_navigation(loader, args):
+    from . import smoke
+    problems = smoke.navigation_check(loader)
+    for p in problems:
+        print("FAIL", p)
+    print("navigation: %s" % ("ok" if not problems else "%d problem(s)" % len(problems)))
+    return 1 if problems else 0
+
+
+def cmd_lifecycle(loader, args):
+    from . import smoke
+    problems = smoke.lifecycle_check(loader)
+    for p in problems:
+        print("FAIL", p)
+    print("lifecycle: %s" % ("ok" if not problems else "%d problem(s)" % len(problems)))
+    return 1 if problems else 0
+
+
 def main(argv):
-    if len(argv) < 2 or argv[1] not in ("test", "dump", "check", "smoke", "first-launch"):
+    if len(argv) < 2 or argv[1] not in ("test", "dump", "check", "smoke", "first-launch", "navigation", "lifecycle"):
         print(__doc__)
         return 2
     root = os.getcwd()
@@ -150,9 +170,9 @@ def main(argv):
         scratch = tempfile.mkdtemp(prefix="gdemu_")
         atexit.register(shutil.rmtree, scratch, True)
         os.environ["GDEMU_TMP"] = scratch
-    loader = Loader(root, dump_dir=os.environ.get("GDEMU_DUMP"), permissive=(argv[1] in ("smoke", "first-launch")))
+    loader = Loader(root, dump_dir=os.environ.get("GDEMU_DUMP"), permissive=(argv[1] in ("smoke", "first-launch", "navigation", "lifecycle")))
     return {"test": cmd_test, "dump": cmd_dump, "check": cmd_check, "smoke": cmd_smoke,
-            "first-launch": cmd_first_launch}[argv[1]](loader, argv[2:])
+            "first-launch": cmd_first_launch, "navigation": cmd_navigation, "lifecycle": cmd_lifecycle}[argv[1]](loader, argv[2:])
 
 
 if __name__ == "__main__":

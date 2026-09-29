@@ -14,14 +14,23 @@ made for this project from scratch (see [docs/ORIGINALITY.md](docs/ORIGINALITY.m
 >   (`tools/check_static.sh`), a Python reference implementation of the simulation with golden test vectors,
 >   numeric/visual checks of the generated art, audio and font;
 > * **execution on an emulator of the GDScript logic** (`python3 -m tools.gdemu test`): every test suite
->   (3.3k checks, including tick-exact comparison of the simulation with the reference) passes, 28 injected
->   defects are all detected, and a "monkey" run that boots all autoloads and the main scene on engine *stubs*
->   visits every screen without a runtime error (it found and fixed one real bug). See
+>   (3.3k checks, including tick-exact comparison of the simulation with the reference) passes; 40 injected
+>   defects (28 in the logic, 12 in the game loop and the run flow) are all detected; scripted "human path"
+>   checks (the very first launch, the Back button in every context, one run from the first jump to results,
+>   records, replay and quit) pass; and a "monkey" run that boots all autoloads and the main scene on engine
+>   *stubs* visits every screen without a runtime error or a broken state invariant. Those checks found and fixed
+>   four real bugs in the game code (leaving a replay, the tutorial panel and the results on screen together,
+>   Back resuming a run behind an open settings screen, a stale toggle). See
 >   [tools/gdemu/README.md](tools/gdemu/README.md) for exactly what that does and does not prove.
 >
 > The automated tests, the Android export and on-device behaviour (layout, rendering, sound, touch and tilt
 > feel, lifecycle, performance) have therefore **not** been executed by the engine yet. The first things to do on
 > a machine with Godot are `tools/run_tests.sh` and the checklist in [docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md).
+>
+> A GitHub Actions job that runs the suites in the official Godot build ran automatically on the first pushes and
+> **failed in its import/test step**. Its log was not analysed while this was authored, so that log is the first
+> thing to look at (the job is opt-in now, see *Continuous integration* below).
+>
 > Expect to fix a few small engine-specific issues on first contact; the architecture and test coverage are there
 > to make that quick.
 
@@ -107,9 +116,13 @@ game/
 | `python3 tools/gen_font.py` | regenerate the game's own display typeface (`assets/fonts/spire_display.ttf`) |
 
 **Continuous integration.** `.github/workflows/spire-sprint.yml` (repository root; runs only for changes under
-`game/`) has two jobs: the static checks plus the emulated test run, and — the one that matters for "does it work
-in the engine" — the same suites inside the official Godot 4.3 headless build, plus the API-based static checker
-against that engine's own `extension_api.json`. Delete the workflow if you do not want it.
+`game/`) has two jobs. The *emulated* job — static checks, all test suites, the scripted first-launch / Back-button /
+run-lifecycle checks and a short monkey run on the GDScript emulator — is pure Python and runs on every push and pull
+request. The *godot* job runs the same suites inside the official Godot 4.3 headless build (plus the API-based static
+checker against that engine's own `extension_api.json`); because it downloads and executes the engine binary it is
+**opt-in** — start it from *Actions ▸ Spire Sprint (Godot game) ▸ Run workflow*. On the first pushes it ran
+automatically and **failed in its "import the project and run every test suite" step**; the cause has not been
+investigated, so that log is the first thing to read. Delete the workflow if you do not want it.
 
 The art and audio generators need Python 3 with `numpy` and `Pillow`, the font generator additionally `fonttools` and
 `shapely`; `gdcheck.py` and the linters need `gdtoolkit`.

@@ -79,10 +79,21 @@ class Invariants:
         self.replays_checked = 0
         self._finished = set()
 
+    def context(self):
+        """State at the moment of a violation, for the report."""
+        g = self.m.game()
+        ns = self.m.loader.ns
+        if g is None:
+            return "no game scene"
+        return "screen=%r open=%s mode=%s paused=%s dead=%s gameplay_input=%s results=%s pause_menu=%s replay=%s tutorial=%s; last controls: %s" % (
+            ns["UIManager"].current_id(), ns["UIManager"].has_screen_open(), g.mode, g.paused, getattr(g.run, "dead", None),
+            ns["InputManager"].gameplay_enabled, g.game_over.visible, g.pause_menu.visible, g.replay_overlay.visible, g.tutorial.visible,
+            " | ".join(self.m.log[-6:]))
+
     def fail(self, message):
         sig = "INVARIANT: " + message.split(":")[0]
         if sig not in self.m.errors:
-            self.m.errors[sig] = [0, "INVARIANT VIOLATED: " + message, "after %d actions" % self.m.actions]
+            self.m.errors[sig] = [0, "INVARIANT VIOLATED: " + message + "\n  state: " + self.context(), "after %d actions" % self.m.actions]
         self.m.errors[sig][0] += 1
 
     def hook_finish_run(self):
@@ -115,7 +126,33 @@ class Invariants:
                     key, result[key], again[key], result["seed"], result["duration_ticks"]))
                 return
 
+    def check_overlays(self):
+        """Which layers may be on screen together, and whether gameplay input is off behind them."""
+        g = self.m.game()
+        if g is None:
+            return
+        ns = self.m.loader.ns
+        ui = ns["UIManager"]
+        im = ns["InputManager"]
+        shown = [name for name, node in (("results", g.game_over), ("pause menu", g.pause_menu), ("replay controls", g.replay_overlay))
+                 if node.visible]
+        if g.tutorial.is_finished_panel_visible():
+            shown.append("tutorial panel")
+        if len(shown) > 1:
+            self.fail("overlays: %s are on screen at the same time" % " + ".join(shown))
+        if g.game_over.visible and g.tutorial.visible:
+            self.fail("overlays: the tutorial is still visible under the results")
+        if g.pause_menu.visible and not g.paused:
+            self.fail("overlays: the pause menu is shown but the game is not paused")
+        run_over = g.run is not None and g.run.dead
+        if im.gameplay_enabled and (g.paused or g.game_over.visible or g.pause_menu.visible or run_over or g.mode == type(g).Mode.MENU
+                                    or g.mode == type(g).Mode.REPLAY or ui.has_screen_open()):
+            self.fail("input: gameplay input is enabled behind an overlay, a menu or after the run ended")
+        if g.mode != type(g).Mode.MENU and ui.has_screen_open() and not g.paused and not run_over and g.mode != type(g).Mode.REPLAY:
+            self.fail("ui: a menu screen is open over a running game that is not paused")
+
     def check_all(self):
+        self.check_overlays()
         ns = self.m.loader.ns
         sm = ns["SaveManager"]
         for cat in ("score", "floor", "combo"):
@@ -577,6 +614,10 @@ def _ranges(lines):
 
 
 # ------------------------------------------------------------------------------------ first launch
+class _Stop(Exception):
+    """Raised by a scripted check when its next steps make no sense any more (the state they build on is missing)."""
+
+
 def first_launch_check(loader, skip_tutorial=False):
     """The very first launch played the way a new player would: logo splash, control selector, main menu, PLAY,
     interactive tutorial, then either SKIP (straight into a real run) or play it out. Returns the list of
@@ -658,4 +699,281 @@ def first_launch_check(loader, skip_tutorial=False):
         expect(not game.paused, "RESUME continues the run")
     for sig, (count, trace, label) in m.errors.items():
         problems.append("runtime error (%dx): %s" % (count, trace.splitlines()[0]))
+    return problems
+
+
+# ------------------------------------------------------------------------------------- navigation
+def navigation_check(loader):
+    """What the Android Back button / Escape does in every context. Returns the expectations that did not hold."""
+    problems = []
+    m = Monkey(loader, 1)
+    loader.boot("all")
+    smoke_profile = seed_profile
+    m.guard("seed profile", smoke_profile, loader)
+    m.invariants.hook_finish_run()
+    main = loader.instantiate("res://src/main.gd")
+    rt.TREE.root.add_child(main)
+    rt.TREE.current_scene = main
+    game = main.game
+    ui = loader.ns["UIManager"]
+    sm = loader.ns["SettingsManager"]
+    mode = type(game).Mode
+
+    def expect(cond, message):
+        if not cond:
+            problems.append(message)
+        return cond
+
+    def labels():
+        return [getattr(n, "text", "") for n, sig in m.interactive() if sig == "pressed"]
+
+    def press(text):
+        for node, sig in m.interactive():
+            if sig == "pressed" and getattr(node, "text", "") == text:
+                m.guard("press " + text, node.pressed.emit)
+                m.frames(10)
+                return True
+        return False
+
+    def back():
+        m.back()
+        m.frames(40)
+
+    m.frames(120)
+    expect(ui.current_id() == "main_menu", "the seeded profile opens on the main menu (got %r)" % ui.current_id())
+
+    # ---- main menu: Back asks before leaving; Back again closes the question
+    back()
+    expect(ui._dialog is not None, "Back on the main menu asks whether to leave")
+    back()
+    expect(ui._dialog is None and ui.current_id() == "main_menu", "Back closes that question and stays on the main menu")
+
+    # ---- every sub screen returns to the main menu
+    for label, screen in (("HIGH SCORES", "high_scores"), ("REPLAYS", "replays"), ("STATISTICS", "statistics"),
+                          ("SETTINGS", "settings"), ("ABOUT", "about"), ("CHARACTER", "characters")):
+        press(label)
+        expect(ui.current_id() == screen, "%s opens the %s screen (got %r)" % (label, screen, ui.current_id()))
+        back()
+        expect(ui.current_id() == "main_menu", "Back on %s returns to the main menu (got %r)" % (screen, ui.current_id()))
+
+    # ---- nested: settings -> How to play -> Back -> Back
+    press("SETTINGS")
+    if press("HOW TO PLAY"):
+        expect(ui.current_id() == "help", "HOW TO PLAY opens the help screen (got %r)" % ui.current_id())
+        back()
+        expect(ui.current_id() == "settings", "Back on the help screen returns to Settings (got %r)" % ui.current_id())
+    back()
+    expect(ui.current_id() == "main_menu", "Back on Settings returns to the main menu")
+
+    # ---- a live run: Back pauses, Back resumes; Settings from the pause menu never resumes the run
+    press("PLAY")
+    expect(game.mode == mode.LIVE and game.run is not None, "PLAY starts a live run (tutorial done in the seeded profile)")
+    m.frames(60)
+    back()
+    expect(game.paused and game.pause_menu.visible, "Back pauses a live run")
+    tick = game.run.tick_count
+    m.frames(60)
+    expect(game.run.tick_count == tick, "a paused run stands still")
+    back()
+    expect(not game.paused and not game.pause_menu.visible, "Back on the pause menu resumes")
+    back()
+    expect(game.paused, "Back pauses again")
+    press("SETTINGS")
+    expect(ui.has_screen_open() and ui.current_id() == "settings" and game.paused, "Settings opens over the paused game")
+    back()
+    expect(game.paused and game.pause_menu.visible and not ui.has_screen_open(), "Back on Settings returns to the pause menu, still paused")
+    press("SETTINGS")
+    if press("CONTROLS"):
+        m.frames(5)
+    if press("CALIBRATE"):
+        expect(ui.current_id() == "calibrate", "CALIBRATE opens the calibration screen (got %r)" % ui.current_id())
+        back()
+        expect(game.paused and ui.current_id() == "settings", "Back on the calibration screen returns to Settings, still paused (paused=%s screen=%r)" % (game.paused, ui.current_id()))
+    back()
+    expect(game.paused and game.pause_menu.visible, "and Back on Settings returns to the pause menu")
+    press("RESUME")
+    expect(not game.paused, "RESUME continues the run")
+
+    # ---- game over: Back leaves for the main menu
+    for _ in range(80):
+        if game.run is None or game.run.dead:
+            break
+        m.play_burst(3.0)
+    if game.run is not None and game.run.dead:
+        m.frames(120)
+        expect(game.game_over.visible, "the results appear after the run ended")
+        back()
+        expect(game.mode == mode.MENU and ui.current_id() == "main_menu" and not game.game_over.visible, "Back on the results returns to the main menu")
+    else:
+        game.quit_to_menu()
+        m.frames(40)
+
+    # ---- watching a replay: Back leaves it
+    press("REPLAYS")
+    if press("WATCH") or press("PLAY"):
+        pass
+    metas = list(loader.ns["ReplayManager"].list_meta())
+    if metas:
+        loaded = loader.ns["ReplayManager"].load_replay(metas[0]["id"])
+        if loaded["ok"]:
+            m.guard("start replay", game.start_replay, loaded["replay"], False)
+            m.frames(60)
+            expect(game.mode == mode.REPLAY and game.replay_overlay.visible, "a replay can be watched")
+            back()
+            expect(game.mode == mode.MENU and not game.replay_overlay.visible, "Back leaves the replay (mode=%s)" % game.mode)
+    for sig, (count, trace, label) in m.errors.items():
+        problems.append("runtime error (%dx): %s" % (count, trace.splitlines()[0]))
+    return problems
+
+
+# -------------------------------------------------------------------------------------- run lifecycle
+def lifecycle_check(loader):
+    """One player session: a run to its end, the results and what they offer (rename, watch, play again),
+    restart / quit from the pause menu. Returns the expectations that did not hold."""
+    problems = []
+    m = Monkey(loader, 5)
+    loader.boot("all")
+    ns = loader.ns
+    sm = ns["SettingsManager"]
+    sm.set_value("control_chosen", True)
+    sm.set_value("tutorial_done", True)
+    sm.set_value("player_name", "Ada")
+    ns["GameManager"].replay_save_delay = 0.0
+    m.invariants.hook_finish_run()
+    toasts = []
+    ns["Events"].toast.connect(toasts.append)
+    main = loader.instantiate("res://src/main.gd")
+    rt.TREE.root.add_child(main)
+    rt.TREE.current_scene = main
+    game = main.game
+    ui = ns["UIManager"]
+    original_toast = ui.toast
+
+    def record_toast(message, seconds=2.4):
+        toasts.append(message)
+        return original_toast(message, seconds)
+    ui.toast = record_toast                      # messages shown directly through UIManager.toast()
+    mode = type(game).Mode
+    lb = ns["LeaderboardManager"]
+    stats = ns["StatisticsManager"]
+    rm = ns["ReplayManager"]
+    im = ns["InputManager"]
+
+    def expect(cond, message):
+        if not cond:
+            problems.append(message)
+        return cond
+
+    def need(cond, message):
+        if not expect(cond, message):
+            raise _Stop()
+
+    def labels():
+        return [getattr(n, "text", "") for n, sig in m.interactive() if sig == "pressed"]
+
+    def press(text):
+        for node, sig in m.interactive():
+            if sig == "pressed" and getattr(node, "text", "") == text:
+                m.guard("press " + text, node.pressed.emit)
+                m.frames(10)
+                return True
+        return False
+
+    def play_until(pred, bursts=90):
+        for _ in range(bursts):
+            if pred():
+                return True
+            m.play_burst(2.0)
+        return pred()
+
+    try:
+        m.frames(120)
+        expect(ui.current_id() == "main_menu", "a profile with the tutorial done opens on the main menu")
+
+        # ---- A: a run to its end
+        need(press("PLAY") and game.mode == mode.LIVE and game.run is not None, "PLAY starts a live run")
+        seed1 = game.run.seed_value
+        expect(im.gameplay_enabled and "II" in labels(), "input is on and the pause button is shown during a run")
+        play_until(lambda: game.run.dead)
+        m.frames(150)
+        result = game.run.build_result()
+        expect(game.run.dead, "the run ends (random play falls eventually)")
+        need(game.game_over.visible and not game.tutorial.visible, "the results are shown after death")
+        expect(not im.gameplay_enabled, "gameplay input is off on the results")
+        expect("II" not in labels(), "the pause button is gone on the results")
+        for wanted in ("PLAY AGAIN", "WATCH REPLAY", "SAVE / RENAME REPLAY", "MAIN MENU"):
+            expect(wanted in labels(), "the results offer %s" % wanted)
+        summary = game._last_summary
+        entries = lb.get_entries("score")
+        expect(len(entries) == 1 and int(entries[0]["seed"]) == seed1 and entries[0]["name"] == "Ada", "the run is on the score board under the player's name")
+        expect(bool(summary["any_record"]) and stats.get_int("games_played") == 1, "the first run is a record and counts as played")
+        banners = [t for t in m.texts() if t.endswith("RECORD!") or t == "NEW HIGH SCORE!"]
+        expect(bool(summary["records"]["score"]) == ("NEW HIGH SCORE!" in banners), "the results show the high-score banner exactly when it is one")
+        rid = str(summary["replay_id"])
+        expect(bool(rid) and rm.has_replay(rid), "the replay file was written")
+
+        # ---- B: rename the replay from the results
+        expect(press("SAVE / RENAME REPLAY") and ui._dialog is not None, "SAVE / RENAME REPLAY opens a name prompt")
+        edits = [n for n in m.nodes() if type(n).__name__ == "LineEdit" and n.is_visible_in_tree()]
+        if expect(bool(edits), "the prompt has a text field"):
+            edits[-1].text = "Great climb"
+            expect(press("SAVE") and ui._dialog is None, "SAVE closes the prompt")
+            expect(str(rm.find_meta(rid).get("name", "")) == "Great climb", "the replay carries the chosen name")
+            expect("Replay saved" in toasts, "the player is told the replay was saved")
+
+        # ---- C: watch it, change the speed, watch again, leave: back on the results
+        need(press("WATCH REPLAY") and game.mode == mode.REPLAY and game.replay_overlay.visible, "WATCH REPLAY starts the replay")
+        expect(not game.game_over.visible, "the results are hidden during the replay")
+        press("4x")
+        expect(game._time_scale == 4.0, "the 4x button sets the speed")
+        for _ in range(400):
+            if game.replay_overlay._finished_panel.visible:
+                break
+            m.frames(30)
+        need(game.replay_overlay._finished_panel.visible, "the replay finishes")
+        expect(game.replay_player is not None and game.replay_player.matches_recording(), "the replay reproduces the recorded score and floor")
+        expect(press("WATCH AGAIN") and game.mode == mode.REPLAY and not game.replay_overlay._finished_panel.visible, "WATCH AGAIN restarts it")
+        m.frames(60)
+        need(press("EXIT"), "the replay has an EXIT button")
+        m.frames(60)
+        need(game.mode == mode.MENU and game.game_over.visible, "leaving a replay watched from the results returns to the results")
+
+        # ---- D: play again
+        need(press("PLAY AGAIN") and game.mode == mode.LIVE, "PLAY AGAIN starts a new run")
+        expect(not game.game_over.visible and game.run.seed_value != seed1 and game.run.tick_count < 400, "it is a fresh run with a new tower")
+        expect(im.gameplay_enabled and "II" in labels(), "input and the pause button are back")
+
+        # ---- E: restart from the pause menu (asks only for valuable runs)
+        m.back()
+        m.frames(10)
+        run_before = game.run
+        expect(press("RESTART") and game.run is not run_before and not game.paused and ui._dialog is None, "RESTART on a small run restarts at once")
+        game.run.debug_teleport_to_floor(40)
+        m.frames(30)
+        m.back()
+        m.frames(10)
+        run_before = game.run
+        expect(press("RESTART") and ui._dialog is not None and game.paused, "RESTART on a valuable run asks first")
+        expect(press("CANCEL") and ui._dialog is None and game.paused and game.run is run_before, "CANCEL keeps the paused run")
+        press("RESTART")
+        expect(press("RESTART") and game.run is not run_before and not game.paused, "confirming restarts")
+
+        # ---- F: quit from the pause menu saves a meaningful run
+        before = len(lb.get_entries("score"))
+        toasts.clear()
+        play_until(lambda: game.run.highest_floor >= 4 or game.run.dead, 40)
+        if not game.run.dead:
+            m.back()
+            m.frames(10)
+            expect(press("QUIT TO MENU"), "the pause menu has QUIT TO MENU")
+            m.frames(60)
+            expect(game.mode == mode.MENU and ui.current_id() == "main_menu", "QUIT TO MENU leads to the main menu")
+            expect(len(lb.get_entries("score")) == before + 1, "the abandoned run was saved to the records")
+            expect(any(t.startswith("Run saved") for t in toasts), "and the player is told")
+    except _Stop:
+        pass                                     # the failed expectation is already in `problems`
+    except Exception as exc:                     # a broken flow can leave the scene in a state the script did not expect
+        problems.append("the script could not continue: %s: %s (smoke.py line %d)" % (type(exc).__name__, exc, exc.__traceback__.tb_lineno))
+    for sig, (count, trace, label) in m.errors.items():
+        problems.append("runtime error / invariant (%dx): %s" % (count, trace.splitlines()[0]))
     return problems

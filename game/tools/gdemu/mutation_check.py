@@ -1,10 +1,12 @@
 """
 Mutation check for the gdemu harness: every injected fault must make at least one suite fail or crash.
 
-    cd game && python3 -m tools.gdemu.mutation_check
+    cd game && python3 -m tools.gdemu.mutation_check              # faults the test suites must notice
+    cd game && python3 -m tools.gdemu.mutation_check --smoke      # faults only the monkey run can see
+    cd game && python3 -m tools.gdemu.mutation_check --lifecycle  # faults only the scripted run lifecycle can see
 
-Each mutation edits a copy of the project (never the working tree) and runs `python3 -m tools.gdemu test`
-in it. A "survivor" means the tests would not notice that defect.
+Each mutation edits a copy of the project (never the working tree) and runs the matching check in it
+(`test`, `smoke` or `lifecycle`). A "survivor" means the check would not notice that defect.
 """
 import os
 import shutil
@@ -78,7 +80,30 @@ SMOKE_MUTATIONS = [
 ]
 
 
-def run_one(name, rel, old, new, smoke=False):
+# faults in the player-facing run flow (results, replay exit, restart, quit); only `lifecycle` walks through them
+LIFECYCLE_MUTATIONS = [
+    ("restart never asks first", "src/view/game_scene.gd",
+     '\tif valuable:\n\t\tUIManager.confirm("Restart?"', '\tif false:\n\t\tUIManager.confirm("Restart?"'),
+    ("quitting a run does not save it", "src/view/game_scene.gd",
+     'if mode == Mode.LIVE and int(result.get("highest_floor", 0)) >= MIN_SAVED_FLOOR:',
+     'if mode == Mode.TUTORIAL and int(result.get("highest_floor", 0)) >= MIN_SAVED_FLOOR:'),
+    ("every new run uses the same tower", "src/view/game_scene.gd",
+     "func start_run() -> void:\n\t_begin_run(Mode.LIVE, GameManager.new_seed(), null)",
+     "func start_run() -> void:\n\t_begin_run(Mode.LIVE, 12345, null)"),
+    ("a replay from the results returns to the menu", "src/view/game_scene.gd",
+     "if _replay_back_to_game_over and not _last_summary.is_empty():", "if false and not _last_summary.is_empty():"),
+    ("watch again forgets where it came from", "src/view/game_scene.gd",
+     "\t\t_replay_return = keep_return\n\t\t_replay_back_to_game_over = keep_flag", "\t\t_replay_return = keep_return\n\t\t_replay_back_to_game_over = false"),
+    ("the rename prompt ignores the typed name", "src/view/game_scene.gd",
+     "ReplayManager.rename_replay(id, name_text)", 'ReplayManager.rename_replay(id, "Saved run")'),
+    ("the pause button stays on the results", "src/view/game_scene.gd",
+     "\thud.set_pause_visible(false)\n\tplayer_view.on_died()", "\thud.set_pause_visible(true)\n\tplayer_view.on_died()"),
+    ("gameplay input stays on under the results", "src/view/game_scene.gd",
+     "\t_run_ended_handled = true\n\tInputManager.set_gameplay_enabled(false)\n\tcontrols_layer.visible = false",
+     "\t_run_ended_handled = true\n\tcontrols_layer.visible = false"),
+]
+
+def run_one(name, rel, old, new, kind="test"):
     tmp = tempfile.mkdtemp()
     try:
         for d in ("src", "tests", "tools", "resources", "assets"):
@@ -94,12 +119,16 @@ def run_one(name, rel, old, new, smoke=False):
                 return None, "mutation target not found"
             open(path, "w", encoding="utf-8").write(text.replace(old, new, 1))
         env = dict(os.environ, GDEMU_TMP=os.path.join(tmp, ".t"))
-        cmd = ["smoke", "--seeded", "--actions", "60", "--seed", "3"] if smoke else ["test"]
+        cmd = {"smoke": ["smoke", "--seeded", "--actions", "60", "--seed", "3"],
+               "lifecycle": ["lifecycle"], "test": ["test"]}[kind]
         r = subprocess.run([sys.executable, "-m", "tools.gdemu"] + cmd, cwd=tmp, capture_output=True, text=True, env=env)
         text = r.stdout + r.stderr
-        if smoke:
+        if kind == "smoke":
             first = [ln for ln in text.splitlines() if ln.startswith("unique errors")]
             return r.returncode != 0, (first[-1] if first else text[-200:])
+        if kind == "lifecycle":
+            lines = [ln for ln in text.splitlines() if ln.strip()]
+            return r.returncode != 0, (lines[0] if len(lines) > 1 else (lines[-1] if lines else ""))[:110]
         summary = [ln for ln in text.splitlines() if ln.startswith("passed:")]
         return r.returncode != 0, (summary[-1] if summary else text[-200:])
     finally:
@@ -111,9 +140,10 @@ def main():
         print("run this from the folder that contains project.godot")
         return 2
     survivors = []
-    smoke = "--smoke" in sys.argv
-    for name, rel, old, new in (SMOKE_MUTATIONS if smoke else MUTATIONS):
-        killed, info = run_one(name, rel, old, new, smoke)
+    kind = "smoke" if "--smoke" in sys.argv else "lifecycle" if "--lifecycle" in sys.argv else "test"
+    mutations = {"smoke": SMOKE_MUTATIONS, "lifecycle": LIFECYCLE_MUTATIONS, "test": MUTATIONS}[kind]
+    for name, rel, old, new in mutations:
+        killed, info = run_one(name, rel, old, new, kind)
         if killed is None:
             print("%-34s %s" % (name, info))
             survivors.append(name + " (target missing)")

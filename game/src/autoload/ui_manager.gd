@@ -156,23 +156,32 @@ func hide_screens() -> void:
 	_stack.clear()
 
 
-## Android back button / Escape. Priority: dialog > running game > current screen > stack.
+## Android back button / Escape. Priority: dialog > open menu screen > running game.
+## A screen that is open always handles Back itself - also when it was opened over a paused game
+## (Settings from the pause menu): the run must never resume behind it.
 func back() -> void:
 	if _dialog != null:
 		close_dialog()
 		AudioManager.play_back()
 		return
-	if game != null and game.handle_back():
+	if has_screen_open():
+		_back_in_screen()
 		return
-	if _current != null:
-		if _current.on_back():
-			return
-		if _stack.size() > 1:
-			AudioManager.play_back()
-			pop()
-			return
-		if _current_id == "main_menu":
-			confirm("Leave the tower?", "Do you want to exit Spire Sprint?", "EXIT", AndroidLifecycleManager.quit_game, true)
+	if game != null:
+		game.handle_back()
+
+
+func _back_in_screen() -> void:
+	if _current.on_back():
+		return
+	if _stack.size() > 1 or _on_root_pop.is_valid():
+		AudioManager.play_back()
+		pop()
+	elif _current_id == "main_menu" or _current_id == "control_select":
+		confirm("Leave the tower?", "Do you want to exit Spire Sprint?", "EXIT", AndroidLifecycleManager.quit_game, true)
+	else:
+		AudioManager.play_back()
+		pop()  # a root screen without a caller goes back to the main menu
 
 
 ## Fades to black, runs `action` while the screen is hidden, then fades back in.

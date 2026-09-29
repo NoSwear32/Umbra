@@ -53,11 +53,18 @@ runtime (see [tools/gdemu/README.md](../tools/gdemu/README.md)); `python3 -m too
 all autoloads and the main scene on engine *stubs* and lets a random "monkey" press buttons, sweep sliders,
 touch, tilt, pause, background the app, watch replays and teleport through every theme.
 
+* Scripted paths that mirror what a person does: the very first launch (selector → menu → tutorial, played or
+  skipped → a real run), the Back button in every context and one run from the first jump to results, records,
+  replay and quit (`python3 -m tools.gdemu first-launch`, `... navigation`, `... lifecycle`). The first two found
+  and fixed real defects (tutorial panel and results on screen together; Back inside Settings resuming the run
+  behind it); the third guards the flow against regressions.
 * All 12 suites pass (3.3k checks), including tick-exact comparison of the simulation with the golden vectors of
-  the independent Python reference. 28 injected defects were all detected (`python3 -m tools.gdemu.mutation_check`).
+  the independent Python reference. 40 injected defects were all detected (`python3 -m tools.gdemu.mutation_check`,
+  `... --smoke`, `... --lifecycle`).
 * The monkey run visits every screen, executes ~85 % of the lines of the scripts it loads and ended without a
-  Python-level error after the defect it found had been fixed (leaving a replay left the scene running one
-  update step per frame on a null replay player during the fade-out).
+  Python-level error or state-invariant violation after the defects it found had been fixed (leaving a replay left
+  the scene running one update step per frame on a null replay player during the fade-out; Back navigation with an
+  open screen over a paused run).
 * **Not** verified: anything the engine does — layout, rendering, fonts and textures on a real GPU, audio,
   touch and sensor latency, Android lifecycle, performance, export. Sections 3 onwards are still open.
 

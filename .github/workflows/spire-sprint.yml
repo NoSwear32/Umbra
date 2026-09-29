@@ -2,10 +2,12 @@ name: Spire Sprint (Godot game)
 
 # Runs only for changes in game/ (the Next.js app in the repository root is unaffected).
 # Two independent jobs:
-#   * emulated  - static checks and the whole test suite on the GDScript emulator (tools/gdemu); no engine needed
+#   * emulated  - static checks and the whole test suite on the GDScript emulator (tools/gdemu). Pure Python,
+#                 runs on every push and pull request. No engine binary is downloaded or executed.
 #   * godot     - the same suites inside the real Godot engine (official 4.3 release), plus the API-based static
-#                 checker against that engine's own extension_api.json
-# The engine job is the one that turns "checked without the engine" into "checked by the engine".
+#                 checker against that engine's own extension_api.json. It downloads and executes the engine
+#                 binary, so it is OPT-IN: it only runs when someone starts it by hand
+#                 (Actions > Spire Sprint (Godot game) > Run workflow).
 
 on:
   push:
@@ -50,11 +52,17 @@ jobs:
         run: |
           python3 -m tools.gdemu first-launch
           python3 -m tools.gdemu first-launch skip
+      - name: Back button in every context
+        run: python3 -m tools.gdemu navigation
+      - name: A run from start to results, records, replay, rename, restart, quit
+        run: python3 -m tools.gdemu lifecycle
       - name: Whole-app smoke run on engine stubs
         run: python3 -m tools.gdemu smoke --seeded --actions 150 --seed 1
 
   godot:
     name: Godot 4.3 headless tests (real engine)
+    # opt-in: downloads and runs the engine binary; only when started manually
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     env:
       GODOT_VERSION: "4.3"
