@@ -18,7 +18,7 @@ func _ready() -> void:
 
 
 func replay_path(id: String) -> String:
-	return SaveManager.REPLAY_DIR + "/" + id + ".replay.json"
+	return SaveManager.replay_dir + "/" + id + ".replay.json"
 
 
 func _index() -> Array:
@@ -72,7 +72,7 @@ func save_replay(r: ReplayData) -> String:
 
 
 func _write_file(r: ReplayData) -> bool:
-	DirAccess.make_dir_recursive_absolute(SaveManager.REPLAY_DIR)
+	DirAccess.make_dir_recursive_absolute(SaveManager.replay_dir)
 	var path: String = replay_path(r.id)
 	var tmp: String = path + ".tmp"
 	var f: FileAccess = FileAccess.open(tmp, FileAccess.WRITE)

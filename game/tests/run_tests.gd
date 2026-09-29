@@ -16,6 +16,7 @@ const SUITES: Array = [
 	"res://tests/test_replay.gd",
 	"res://tests/test_save.gd",
 	"res://tests/test_records.gd",
+	"res://tests/test_flow.gd",
 	"res://tests/test_input.gd",
 	"res://tests/test_config.gd",
 	"res://tests/test_characters.gd",

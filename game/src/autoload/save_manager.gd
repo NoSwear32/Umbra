@@ -43,10 +43,13 @@ var dir_path: String = DIR_PATH
 var main_path: String = MAIN_PATH
 var backup_path: String = BACKUP_PATH
 var tmp_path: String = TMP_PATH
+var replay_dir: String = REPLAY_DIR
+var character_dir: String = CHARACTER_DIR
 
 var _dirty: bool = false
 var _timer: float = 0.0
 var _last_error: String = ""
+var _sandbox_saved: Dictionary = {}
 
 
 func _ready() -> void:
@@ -124,8 +127,8 @@ func last_error() -> String:
 # ---------------------------------------------------------------------------
 func load_all() -> void:
 	DirAccess.make_dir_recursive_absolute(dir_path)
-	DirAccess.make_dir_recursive_absolute(REPLAY_DIR)
-	DirAccess.make_dir_recursive_absolute(CHARACTER_DIR)
+	DirAccess.make_dir_recursive_absolute(replay_dir)
+	DirAccess.make_dir_recursive_absolute(character_dir)
 	var candidates: Array = [["main", main_path], ["tmp", tmp_path], ["backup", backup_path]]
 	var found: Dictionary = {}
 	var source: String = "new"
@@ -248,6 +251,58 @@ func write_atomic(text: String) -> bool:
 		_last_error = "rename failed (error %d)" % err
 		return false
 	return true
+
+
+# ---------------------------------------------------------------------------
+# Test sandbox
+# ---------------------------------------------------------------------------
+## Redirects every profile, replay and character file to `dir` and starts from a fresh
+## profile, so tests can exercise the real managers without touching the player's data.
+## Pending auto-saves cannot leak: the live document and the dirty flag are set aside.
+## Always pair with leave_sandbox().
+func enter_sandbox(dir: String) -> void:
+	if not _sandbox_saved.is_empty():
+		return
+	_sandbox_saved = {
+		"data": data, "loaded_from": loaded_from, "future_version": future_version, "dirty": _dirty, "timer": _timer,
+		"dir_path": dir_path, "main_path": main_path, "backup_path": backup_path, "tmp_path": tmp_path,
+		"replay_dir": replay_dir, "character_dir": character_dir,
+	}
+	dir_path = dir
+	main_path = dir + "/profile.json"
+	backup_path = dir + "/profile.bak.json"
+	tmp_path = dir + "/profile.tmp.json"
+	replay_dir = dir + "/replays"
+	character_dir = dir + "/characters"
+	future_version = false
+	_dirty = false
+	load_all()
+	_dirty = false
+
+
+## Restores the player's own profile (in memory and on disk it was never touched) and lets
+## every manager re-bind to it.
+func leave_sandbox() -> void:
+	if _sandbox_saved.is_empty():
+		return
+	var saved: Dictionary = _sandbox_saved
+	_sandbox_saved = {}
+	data = saved["data"]
+	loaded_from = String(saved["loaded_from"])
+	future_version = bool(saved["future_version"])
+	_dirty = bool(saved["dirty"])
+	_timer = float(saved["timer"])
+	dir_path = String(saved["dir_path"])
+	main_path = String(saved["main_path"])
+	backup_path = String(saved["backup_path"])
+	tmp_path = String(saved["tmp_path"])
+	replay_dir = String(saved["replay_dir"])
+	character_dir = String(saved["character_dir"])
+	loaded.emit()
+
+
+func in_sandbox() -> bool:
+	return not _sandbox_saved.is_empty()
 
 
 # ---------------------------------------------------------------------------

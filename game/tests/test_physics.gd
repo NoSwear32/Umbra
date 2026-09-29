@@ -19,6 +19,7 @@ func run(t: TestContext) -> void:
 	_test_a_to_c(t, tuning)
 	_test_d_wall(t, tuning)
 	_test_e_one_way(t, tuning)
+	_test_landing_tolerance(t, tuning)
 	_test_no_tunnelling(t, tuning)
 	_test_j_single_death(t, tuning)
 	_test_jump_and_input_rules(t, tuning)
@@ -159,6 +160,35 @@ func _test_e_one_way(t: TestContext, tuning: GameTuning) -> void:
 	t.check(p.grounded, "the player lands eventually")
 	t.check(p.support != null and absf(p.y - (p.support as PlatformData).y) < 1e-9, "the player ends exactly on a platform surface")
 	t.check(landed_ticks > 0, "landing happens while descending")
+
+
+## The swept landing test tolerates 0.01 px of drift: feet that ended a hair below a surface
+## (accumulated float error after walking off a ledge or a wall rebound) must still be caught.
+func _test_landing_tolerance(t: TestContext, tuning: GameTuning) -> void:
+	t.suite("physics: landing tolerance")
+	var tower: PlatformGenerator = PlatformGenerator.new(tuning, 11)
+	tower.ensure_up_to(4000.0)
+	var target: PlatformData = tower.platforms[3]
+	var px: float = clampf(target.x, tuning.player_half_width, tuning.tower_width - tuning.player_half_width)
+
+	var near: PlayerController = PlayerController.new(tuning)
+	near.grounded = false
+	near.support = null
+	near.x = px
+	near.y = target.y - 0.005
+	near.vy = -200.0
+	near.step(0.0, false, tower)
+	t.check(near.grounded and near.support == target, "feet 0.005 px below a surface still land on it")
+	t.near(near.y, target.y, 1e-9, "the landing snaps the feet exactly onto the surface")
+
+	var far: PlayerController = PlayerController.new(tuning)
+	far.grounded = false
+	far.support = null
+	far.x = px
+	far.y = target.y - 0.5
+	far.vy = -200.0
+	far.step(0.0, false, tower)
+	t.check(not far.grounded, "feet clearly below a surface fall past it (platforms are one-way)")
 
 
 ## High-speed falls must never pass through a platform.

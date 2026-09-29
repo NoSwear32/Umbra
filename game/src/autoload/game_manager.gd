@@ -13,6 +13,8 @@ var tuning: GameTuning
 var game_version: String = "1.0.0"
 var state: int = State.MENU
 var last_summary: Dictionary = {}
+## Seconds between the game-over screen appearing and the replay file being written (0 = at once; tests).
+var replay_save_delay: float = 0.45
 
 
 func _ready() -> void:
@@ -91,7 +93,8 @@ func finish_run(result: Dictionary, replay: ReplayData) -> Dictionary:
 ## Replays are written a moment after the game-over screen appears, so the file write
 ## and compression never cause a hitch at the moment of death.
 func _save_replay_later(replay: ReplayData) -> void:
-	await get_tree().create_timer(0.45).timeout
+	if replay_save_delay > 0.0:
+		await get_tree().create_timer(replay_save_delay).timeout
 	ReplayManager.save_replay(replay)
 
 

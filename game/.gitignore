@@ -32,3 +32,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# gdemu scratch (user:// of the emulated runtime)
+.gdemu_tmp/

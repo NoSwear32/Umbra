@@ -166,7 +166,7 @@ func select(id: String) -> bool:
 # Custom packs
 # ---------------------------------------------------------------------------
 func _pack_path(id: String) -> String:
-	return SaveManager.CHARACTER_DIR + "/" + id + ".spirechar"
+	return SaveManager.character_dir + "/" + id + ".spirechar"
 
 
 func _load_custom_packs() -> void:
@@ -196,7 +196,7 @@ func import_pack_text(text: String) -> Dictionary:
 	if not bool(r["ok"]):
 		return {"ok": false, "error": String(r["error"]), "id": ""}
 	var d: CharacterDef = r["def"]
-	DirAccess.make_dir_recursive_absolute(SaveManager.CHARACTER_DIR)
+	DirAccess.make_dir_recursive_absolute(SaveManager.character_dir)
 	var f: FileAccess = FileAccess.open(_pack_path(d.id), FileAccess.WRITE)
 	if f == null:
 		return {"ok": false, "error": "Could not store the character (storage error).", "id": ""}
