@@ -51,6 +51,18 @@ class Image(rt.Resource):
         img._im = _PIL.new("RGBA", (int(w), int(h)), (0, 0, 0, 0))
         return img
 
+    @staticmethod
+    def create(w, h, mipmaps, fmt):
+        return Image.create_empty(w, h, mipmaps, fmt)
+
+    def set_pixel(self, x, y, color):
+        self._im.putpixel((int(x), int(y)), (int(round(color.r * 255)), int(round(color.g * 255)),
+                                              int(round(color.b * 255)), int(round(color.a * 255))))
+
+    def get_pixel(self, x, y):
+        r, g, b, a = self._im.getpixel((int(x), int(y)))
+        return rt.Color(r / 255.0, g / 255.0, b / 255.0, a / 255.0)
+
     def fill(self, color):
         self._im.paste((int(round(color.r * 255)), int(round(color.g * 255)), int(round(color.b * 255)), int(round(color.a * 255))),
                        (0, 0, self._im.width, self._im.height))

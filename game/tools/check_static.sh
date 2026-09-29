@@ -4,6 +4,8 @@
 #   * gdcheck.py                                 - names, members, signals, arities against the
 #                                                  engine API (needs an extension_api.json)
 #   * the Python reference simulation and its golden test vectors
+#   * gdemu: every test suite executed on an emulator of the GDScript logic (tools/gdemu/README.md);
+#     set SMOKE=1 to add a short whole-app monkey run on engine stubs
 #
 #   tools/check_static.sh [path/to/extension_api.json]
 #
@@ -25,4 +27,10 @@ else
 fi
 echo "== golden vectors are up to date"
 python3 tools/reference/gen_golden.py > /dev/null && git diff --quiet -- tests/golden || { echo "golden vectors changed - review and commit them"; FAIL=1; }
+echo "== gdemu (tests on the GDScript emulator, no engine)"
+python3 -m tools.gdemu test || FAIL=1
+if [ "${SMOKE:-0}" = "1" ]; then
+  echo "== gdemu smoke (monkey run on engine stubs)"
+  python3 -m tools.gdemu smoke --seeded --actions 200 --seed 1 || FAIL=1
+fi
 exit $FAIL

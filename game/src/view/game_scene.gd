@@ -322,7 +322,7 @@ func _process(delta: float) -> void:
 
 func _sim_tick() -> void:
 	if mode == Mode.REPLAY:
-		if not replay_player.step():
+		if replay_player == null or not replay_player.step():
 			_on_replay_finished()
 		return
 	var n: int = run.tick_count + 1
@@ -355,7 +355,8 @@ func _update_visuals(delta: float) -> void:
 	backdrop.update_view(cam_bottom, ThemeManager.blended_at(float(run.highest_floor)))
 	var axis: float = 0.0
 	if mode == Mode.REPLAY:
-		axis = replay_player.current_axis()
+		if replay_player != null:
+			axis = replay_player.current_axis()
 	else:
 		axis = InputManager.sample_axis()
 	player_view.update_view(alpha, delta, axis)
@@ -678,7 +679,9 @@ func _on_replay_finished() -> void:
 
 func _on_replay_exit() -> void:
 	replay_overlay.close()
-	replay_player = null
+	# The scene keeps updating in REPLAY mode until the fade-out callback runs, so the player
+	# object stays alive until then; only stepping stops.
+	_replay_finished = true
 	_current_replay = null
 	if _replay_back_to_game_over and not _last_summary.is_empty():
 		_replay_back_to_game_over = false
@@ -690,6 +693,7 @@ func _on_replay_exit() -> void:
 func _finish_replay_to_results() -> void:
 	# back to the results of the run that was just watched (over the attract background)
 	run = null
+	replay_player = null
 	_enter_menu_mode()
 	overlay_layer.visible = true
 	tutorial.stop()
@@ -699,6 +703,7 @@ func _finish_replay_to_results() -> void:
 
 func _finish_replay_exit() -> void:
 	run = null
+	replay_player = null
 	_enter_menu_mode()
 	_music_state = ""
 	var target: String = _replay_return

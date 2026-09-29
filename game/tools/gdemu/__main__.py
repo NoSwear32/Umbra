@@ -4,6 +4,7 @@ gdemu command line.
     python3 -m tools.gdemu test [suite ...]     run test suites (default: all engine-independent ones)
     python3 -m tools.gdemu dump res://src/x.gd  print the Python generated for one script
     python3 -m tools.gdemu check                transpile + load every script under src/ and report gaps
+    python3 -m tools.gdemu smoke [--actions N] [--seed S]   boot the whole app on engine stubs and press buttons
 
 Run from the project directory (the folder that contains project.godot).
 gdemu executes the project's GDScript logic under CPython with an emulated runtime. It is NOT the
@@ -90,8 +91,40 @@ def cmd_test(loader, args):
     return 1 if (ctx.failed or crashed) else 0
 
 
+def cmd_smoke(loader, args):
+    from . import smoke
+    actions, seed = 400, 1
+    detail = None
+    lines = "--lines" in args
+    it = iter(args)
+    for a in it:
+        if a in ("--coverage", "--lines", "--seeded"):
+            continue
+        if a == "--detail":
+            detail = next(it)
+            continue
+        if a == "--actions":
+            actions = int(next(it))
+        elif a == "--seed":
+            seed = int(next(it))
+    cov = smoke.LineCoverage(loader) if lines or detail else None
+    m = smoke.run(loader, actions, seed, coverage=cov, seeded="--seeded" in args)
+    print("actions: %d   frames: %d   screens visited: %s" % (m.actions, rt.TREE.frames, ", ".join(sorted(m.screens_seen)) or "-"))
+    if "--coverage" in args:
+        print("controls pressed (%d distinct):" % len(m.pressed))
+        for k, v in m.pressed.most_common():
+            print("   %4d  %s" % (v, k))
+        print("game states seen:", dict(m.modes))
+    if cov is not None:
+        print(cov.report(40, detail))
+    print("unique errors: %d" % len(m.errors))
+    for sig, (count, trace, label) in m.errors.items():
+        print("\n[%dx] first seen during: %s\n%s" % (count, label, trace))
+    return 1 if m.errors else 0
+
+
 def main(argv):
-    if len(argv) < 2 or argv[1] not in ("test", "dump", "check"):
+    if len(argv) < 2 or argv[1] not in ("test", "dump", "check", "smoke"):
         print(__doc__)
         return 2
     root = os.getcwd()
@@ -99,8 +132,8 @@ def main(argv):
         print("run this from the folder that contains project.godot")
         return 2
     os.environ.setdefault("GDEMU_TMP", os.path.join(root, ".gdemu_tmp"))
-    loader = Loader(root, dump_dir=os.environ.get("GDEMU_DUMP"))
-    return {"test": cmd_test, "dump": cmd_dump, "check": cmd_check}[argv[1]](loader, argv[2:])
+    loader = Loader(root, dump_dir=os.environ.get("GDEMU_DUMP"), permissive=(argv[1] == "smoke"))
+    return {"test": cmd_test, "dump": cmd_dump, "check": cmd_check, "smoke": cmd_smoke}[argv[1]](loader, argv[2:])
 
 
 if __name__ == "__main__":

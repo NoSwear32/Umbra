@@ -7,13 +7,23 @@ mean bigger jumps — skip several floors at once, chain those leaps into combos
 tower's rising *surge* line. Everything you see and hear — art, characters, sound, music, logotype, UI — was
 made for this project from scratch (see [docs/ORIGINALITY.md](docs/ORIGINALITY.md)).
 
-> **Verification status — please read.** The game was written and checked *statically* (syntax, names,
-> signatures and argument counts against the Godot 4.3–4.7 API dumps, a Python reference implementation of the
-> simulation with golden test vectors, numeric/visual checks of generated assets). The Godot engine itself
-> could **not** be run where this was authored, so the automated tests, the Android export and on-device
-> behaviour have **not been executed yet**. The first things to do on a machine with Godot are
-> `tools/run_tests.sh` and the checklist in [docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md). Expect to fix a few
-> small engine-specific issues on first contact; the architecture and test coverage are there to make that quick.
+> **Verification status — please read.** The Godot engine itself could **not** be run where this was authored,
+> so nothing here has been built, imported, exported or played by the engine. What was done instead:
+>
+> * static checks — syntax, names, signatures and argument counts against the Godot 4.3–4.7 API dumps
+>   (`tools/check_static.sh`), a Python reference implementation of the simulation with golden test vectors,
+>   numeric/visual checks of the generated art, audio and font;
+> * **execution on an emulator of the GDScript logic** (`python3 -m tools.gdemu test`): every test suite
+>   (3.3k checks, including tick-exact comparison of the simulation with the reference) passes, 28 injected
+>   defects are all detected, and a "monkey" run that boots all autoloads and the main scene on engine *stubs*
+>   visits every screen without a runtime error (it found and fixed one real bug). See
+>   [tools/gdemu/README.md](tools/gdemu/README.md) for exactly what that does and does not prove.
+>
+> The automated tests, the Android export and on-device behaviour (layout, rendering, sound, touch and tilt
+> feel, lifecycle, performance) have therefore **not** been executed by the engine yet. The first things to do on
+> a machine with Godot are `tools/run_tests.sh` and the checklist in [docs/QA_CHECKLIST.md](docs/QA_CHECKLIST.md).
+> Expect to fix a few small engine-specific issues on first contact; the architecture and test coverage are there
+> to make that quick.
 
 ## Quick start
 
@@ -32,7 +42,7 @@ made for this project from scratch (see [docs/ORIGINALITY.md](docs/ORIGINALITY.m
 ## How it plays
 
 * **Two control modes** (chosen on first launch, changeable any time in *Settings ▸ Controls*):
-  * **Touch** — hold the LEFT or RIGHT half of the screen to run in that direction; **release to jump**.
+  * **Touch** — hold the big **LEFT** or **RIGHT** button in the lower corners to run in that direction; **release to jump**.
     The longer you ran, the harder the jump. Multi-touch aware, adjustable button size, opacity, position,
     left/right swap and a minimum-hold filter so accidental taps do not jump.
   * **Tilt** — tilt the device to run, **tap anywhere** to jump. Smoothing, dead zone, three sensitivity presets
@@ -90,6 +100,7 @@ game/
 | --- | --- |
 | `tools/run_tests.sh [godot]` | import + run all headless test suites (needs Godot) |
 | `tools/check_static.sh [api.json]` | gdparse, gdlint, gdcheck (names/signatures vs engine API) and golden-vector check (no engine needed at run time) |
+| `python3 -m tools.gdemu test` / `smoke` | run the tests / a whole-app monkey run on the GDScript emulator (no engine; see `tools/gdemu/README.md`) |
 | `python3 tools/reference/gen_golden.py` | regenerate `tests/golden/*.json` from the Python reference simulation |
 | `python3 tools/generate_audio.py` | regenerate all sound effects and music (`assets/audio`) |
 | `python3 tools/gen_art.py [themes\|characters\|ui]` | regenerate themes, character sheets, logo and icons |

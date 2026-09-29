@@ -210,7 +210,17 @@ _TYPE_BY_NAME = {
 }
 
 
+class GDScript:
+    """Type name only: every transpiled script class counts as a GDScript resource."""
+
+
+def _is_script(x):
+    return isinstance(x, type) and issubclass(x, Object)
+
+
 def _is(x, t):
+    if t is GDScript:
+        return _is_script(x)
     if isinstance(t, str):
         f = _TYPE_BY_NAME.get(t)
         if f is None:
@@ -226,6 +236,8 @@ def _is(x, t):
 
 
 def _as(x, t):
+    if t is GDScript:
+        return x if _is_script(x) else None
     if isinstance(t, str):
         if t == "int":
             return int(x) if isinstance(x, (int, float)) else None
@@ -528,6 +540,32 @@ class PackedStringArray(PackedArray):
         return ""
 
 
+class PackedVector2Array(PackedArray):
+    @staticmethod
+    def _conv(x):
+        return x
+
+    def _zero(self):
+        return Vector2()
+
+    def resize(self, n):
+        if n < len(self):
+            del self[n:]
+        else:
+            self.extend([Vector2() for _ in range(n - len(self))])
+        return 0
+
+
+class PackedVector3Array(PackedVector2Array):
+    def _zero(self):
+        return Vector3()
+
+
+class PackedColorArray(PackedVector2Array):
+    def _zero(self):
+        return Color()
+
+
 class PackedByteArray(bytearray):
     def __init__(self, src=None):
         bytearray.__init__(self)
@@ -789,6 +827,32 @@ class Rect2:
     def grow(self, amount):
         return Rect2(self.position.x - amount, self.position.y - amount, self.size.x + 2 * amount, self.size.y + 2 * amount)
 
+    def intersection(self, b):
+        x1, y1 = max(self.position.x, b.position.x), max(self.position.y, b.position.y)
+        x2 = min(self.position.x + self.size.x, b.position.x + b.size.x)
+        y2 = min(self.position.y + self.size.y, b.position.y + b.size.y)
+        if x2 <= x1 or y2 <= y1:
+            return Rect2()
+        return Rect2(x1, y1, x2 - x1, y2 - y1)
+
+    def intersects(self, b, include_borders=False):
+        return not self.intersection(b).size == Vector2()
+
+    def merge(self, b):
+        x1, y1 = min(self.position.x, b.position.x), min(self.position.y, b.position.y)
+        x2 = max(self.position.x + self.size.x, b.position.x + b.size.x)
+        y2 = max(self.position.y + self.size.y, b.position.y + b.size.y)
+        return Rect2(x1, y1, x2 - x1, y2 - y1)
+
+    def expand(self, v):
+        return self.merge(Rect2(v.x, v.y, 0.0, 0.0))
+
+    def has_area(self):
+        return self.size.x > 0 and self.size.y > 0
+
+    def get_area(self):
+        return self.size.x * self.size.y
+
     def get_center(self):
         return self.position + self.size * 0.5
 
@@ -886,6 +950,9 @@ class Object:
         cls._gd_floats_all = frozenset(allf)
 
     def __init__(self, *args):
+        prelude = getattr(type(self), "_gd_prelude", None)
+        if prelude is not None:
+            prelude(self)
         for klass in reversed(type(self).__mro__):
             init = klass.__dict__.get("_gd_members")
             if init is not None:
@@ -962,25 +1029,191 @@ class Resource(RefCounted):
 
 
 class Node(Object):
+    """A scene-tree node: children, parent, lifecycle order (_enter_tree, children, _ready) and processing."""
     PROCESS_MODE_INHERIT, PROCESS_MODE_PAUSABLE, PROCESS_MODE_WHEN_PAUSED, PROCESS_MODE_ALWAYS, PROCESS_MODE_DISABLED = 0, 1, 2, 3, 4
     process_mode = 0
-    name = ""
     _gd_in_tree = False
 
-    def add_child(self, n, *a):
-        pass
+    def _gd_prelude(self):
+        self._children = []
+        self._parent = None
+        self._gd_blocked = 0
+        self._gd_freed = False
+        self._gd_ready_done = False
+        self._gd_groups = set()
+        self.name = type(self).__name__
+
+    def add_child(self, child, force_readable_name=False, internal=0):
+        if child is None:
+            raise GDError("Parameter \"p_child\" is null.")
+        if self._gd_blocked:
+            raise GDError("Parent node is busy setting up children, `add_child()` failed. "
+                          "Consider using `add_child.call_deferred(child)` instead.")
+        if child._parent is not None:
+            raise GDError("Can't add child '%s' to '%s', already has a parent '%s'." % (child.name, self.name, child._parent.name))
+        if child is self:
+            raise GDError("Can't add child '%s' to itself." % child.name)
+        child._parent = self
+        self._children.append(child)
+        if self._gd_in_tree:
+            self._gd_blocked += 1              # the engine blocks the parent while the child enters the tree
+            try:
+                child._gd_enter_tree()
+            finally:
+                self._gd_blocked -= 1
+
+    def add_sibling(self, sibling, force_readable_name=False):
+        self._parent.add_child(sibling)
+
+    def remove_child(self, child):
+        if self._gd_blocked:
+            raise GDError("Parent node is busy adding/removing children, `remove_child()` can't be called at this time. "
+                          "Consider using `remove_child.call_deferred(child)` instead.")
+        if child not in self._children:
+            raise GDError("Cannot remove a child that is not a child of this node.")
+        self._children.remove(child)
+        child._parent = None
+        if self._gd_in_tree:
+            child._gd_exit_tree()
+
+    def reparent(self, new_parent, keep_global_transform=True):
+        if self._parent is not None:
+            self._parent.remove_child(self)
+        new_parent.add_child(self)
+
+    def get_children(self, include_internal=False):
+        return Array(self._children)
+
+    def get_child_count(self, include_internal=False):
+        return len(self._children)
+
+    def get_child(self, i, include_internal=False):
+        return self._children[i]
+
+    def move_child(self, child, to_index):
+        self._children.remove(child)
+        n = len(self._children)
+        self._children.insert(to_index if to_index >= 0 else n + 1 + to_index, child)
+
+    def get_parent(self):
+        return self._parent
+
+    def has_node(self, path):
+        return self.get_node_or_null(path) is not None
+
+    def get_node_or_null(self, path):
+        cur = self
+        for part in str(path).split("/"):
+            if part in ("", "."):
+                continue
+            if part == "..":
+                cur = cur._parent
+            else:
+                cur = next((c for c in cur._children if c.name == part), None)
+            if cur is None:
+                return None
+        return cur
+
+    def get_node(self, path):
+        n = self.get_node_or_null(path)
+        if n is None:
+            raise GDError("Node not found: \"%s\" (relative to \"%s\")." % (path, self.name))
+        return n
+
+    def find_child(self, pattern, recursive=True, owned=True):
+        for c in self._children:
+            if c.name == pattern:
+                return c
+            if recursive:
+                r = c.find_child(pattern, True, owned)
+                if r is not None:
+                    return r
+        return None
+
+    def add_to_group(self, group, persistent=False):
+        self._gd_groups.add(group)
+
+    def is_in_group(self, group):
+        return group in self._gd_groups
+
+    def queue_free(self):
+        if not self._gd_freed:
+            self._gd_freed = True
+            TREE._to_free.append(self)
+
+    def is_queued_for_deletion(self):
+        return self._gd_freed
 
     def is_inside_tree(self):
         return self._gd_in_tree
 
     def get_tree(self):
+        if not self._gd_in_tree:
+            raise GDError("Cannot get_tree(): the node '%s' is not inside the scene tree." % self.name)
         return TREE
 
-    def set_process(self, v):
+    def get_viewport(self):
+        """Null outside the tree, as in the engine."""
+        return TREE.viewport if self._gd_in_tree else None
+
+    def get_window(self):
+        return TREE.viewport if self._gd_in_tree else None
+
+    def set_process(self, on):
+        self._gd_process_on = bool(on)
+
+    def set_physics_process(self, on):
+        self._gd_physics_on = bool(on)
+
+    def set_process_input(self, on):
         pass
 
-    def set_physics_process(self, v):
-        pass
+    def is_processing(self):
+        return getattr(self, "_gd_process_on", True)
+
+    def _gd_enter_tree(self):
+        if self._gd_in_tree:
+            return
+        self._gd_in_tree = True
+        f = getattr(self, "_enter_tree", None)
+        if f is not None:
+            f()
+        for c in list(self._children):
+            c._gd_enter_tree()
+        if not self._gd_ready_done:
+            self._gd_ready_done = True
+            f = getattr(self, "_ready", None)
+            if f is not None:
+                f()
+
+    def _gd_exit_tree(self):
+        for c in list(self._children):
+            c._gd_exit_tree()
+        f = getattr(self, "_exit_tree", None)
+        if f is not None:
+            f()
+        self._gd_in_tree = False
+
+    def _gd_effective_mode(self):
+        n = self
+        while n is not None:
+            if n.process_mode != 0:
+                return n.process_mode
+            n = n._parent
+        return 1
+
+    def _gd_should_process(self):
+        mode = self._gd_effective_mode()
+        if mode == 4:
+            return False
+        if TREE.paused:
+            return mode in (2, 3)
+        return mode != 2
+
+    def _gd_walk(self):
+        yield self
+        for c in list(self._children):
+            yield from c._gd_walk()
 
 
 class InputEvent(RefCounted):
@@ -1001,6 +1234,14 @@ class InputEventScreenDrag(InputEvent):
         self.index = 0
         self.position = Vector2()
         self.relative = Vector2()
+
+
+class InputEventMouseButton(InputEvent):
+    def __init__(self, *args):
+        self.button_index = 0
+        self.position = Vector2()
+        self.pressed = False
+        self.double_click = False
 
 
 class InputEventKey(InputEvent):
@@ -1055,6 +1296,12 @@ class Callable:
     def bind(self, *args):
         return Callable(fn=self.fn, bound=self.bound + tuple(args))
 
+    def call_deferred(self, *args):
+        _DEFERRED.append((self, "__call__", args))
+
+    def unbind(self, n):
+        return Callable(fn=self.fn, bound=self.bound)
+
     def is_valid(self):
         return self.fn is not None
 
@@ -1085,20 +1332,90 @@ class SceneTreeTimer(RefCounted):
 
 
 class SceneTree(Object):
+    """Just enough of the main loop: process / physics_process callbacks, input delivery, timers, deferred calls."""
+
     def __init__(self):
         self.paused = False
-        self.root = None
+        self.root = Node()
+        self.root._gd_in_tree = True
+        self.root.name = "root"
+        self.viewport = None            # set by the engine stubs
+        self.current_scene = None
         self.process_frame = Signal(self, "process_frame")
+        self.physics_frame = Signal(self, "physics_frame")
         self.quit_code = None
+        self._to_free = []
+        self._timers = []
+        self._physics_accum = 0.0
+        self.frames = 0
+        self.frame_hook = None          # the engine stubs finish tweens here
 
     def create_timer(self, seconds, *a):
-        return SceneTreeTimer(seconds)
+        t = SceneTreeTimer(seconds)
+        self._timers.append(t)
+        return t
 
     def quit(self, code=0):
         self.quit_code = code
 
     def call_group(self, *a):
         pass
+
+    def get_nodes_in_group(self, group):
+        return Array(n for n in self.root._gd_walk() if group in n._gd_groups)
+
+    def step(self, delta, physics_hz=60):
+        """One frame: deferred calls, timers, _process, fixed-rate _physics_process, then queued frees."""
+        self.frames += 1
+        if Time.virtual:
+            Time.advance(delta)
+        run_deferred()
+        for t in list(self._timers):
+            t.time_left -= delta
+            if t.time_left <= 0:
+                self._timers.remove(t)
+                t.timeout.emit()
+        self.process_frame.emit()
+        self._physics_accum += delta
+        step = 1.0 / physics_hz
+        while self._physics_accum >= step:
+            self._physics_accum -= step
+            for n in list(self.root._gd_walk()):
+                f = getattr(n, "_physics_process", None)
+                if f is not None and n._gd_in_tree and n._gd_should_process():
+                    f(step)
+        for n in list(self.root._gd_walk()):
+            f = getattr(n, "_process", None)
+            if f is not None and n._gd_in_tree and not n._gd_freed and n.is_processing() and n._gd_should_process():
+                f(delta)
+        run_deferred()
+        if self.frame_hook is not None:
+            self.frame_hook()
+        self.flush_frees()
+
+    def notify_all(self, what):
+        """Sends a notification (lifecycle, focus, close request) to every node that handles it."""
+        for n in list(self.root._gd_walk()):
+            f = getattr(n, "_notification", None)
+            if f is not None:
+                f(what)
+
+    def flush_frees(self):
+        while self._to_free:
+            n = self._to_free.pop(0)
+            if n._parent is not None:
+                n._parent.remove_child(n)
+            elif n._gd_in_tree:
+                n._gd_exit_tree()
+
+    def input(self, event):
+        """Delivers an input event: _input of every node (last added first), then _unhandled_input."""
+        nodes = [n for n in self.root._gd_walk() if n._gd_in_tree and n._gd_should_process()]
+        for name in ("_input", "_unhandled_input"):
+            for n in reversed(nodes):
+                f = getattr(n, name, None)
+                if f is not None:
+                    f(event)
 
 
 def _await(x):
@@ -1130,6 +1447,8 @@ def _mref(obj, name):
     if obj is None:
         raise GDError("Invalid access to property or key '%s' on a base object of type 'Nil'." % name)
     v = getattr(obj, name)
+    if getattr(v, "_gd_opaque", False) and not isinstance(v, type):
+        return Callable(fn=v) if not hasattr(v, "connect") else v
     if callable(v) and not isinstance(v, (Callable, Signal, type)):
         return Callable(fn=v)
     return v
@@ -1150,6 +1469,8 @@ def _ga(obj, name):
         v = getattr(obj, name)
     except AttributeError:
         raise GDError("Invalid access to property or key '%s' on a base object of type '%s'." % (name, type(obj).__name__))
+    if getattr(v, "_gd_opaque", False):
+        return v
     if callable(v) and not isinstance(v, (Callable, Signal, type)):
         return Callable(fn=v)
     return v
@@ -1578,6 +1899,52 @@ def snappedf(x, step):
     return round_(x / step) * step if step else x
 
 
+snapped = snappedf
+
+
+def snappedi(x, step):
+    return int(round_(x / step) * step) if step else int(x)
+
+
+def linear_to_db(x):
+    return math.log(x) * 8.6858896380650365530225783783321 if x > 0 else -math.inf
+
+
+def db_to_linear(x):
+    return math.exp(x * 0.11512925464970228420089957273422)
+
+
+def wrapf(v, lo, hi):
+    span = hi - lo
+    return lo if span == 0 else v - span * math.floor((v - lo) / span)
+
+
+def wrapi(v, lo, hi):
+    span = hi - lo
+    return lo if span == 0 else lo + (v - lo) % span
+
+
+def remap(v, istart, istop, ostart, ostop):
+    return ostart + (ostop - ostart) * ((v - istart) / (istop - istart))
+
+
+def pingpong(v, length):
+    if length == 0:
+        return 0.0
+    t = math.fmod(v, length * 2.0)
+    t = t + length * 2.0 if t < 0 else t
+    return length - abs(t - length)
+
+
+def angle_difference(a, b):
+    d = math.fmod(b - a, math.tau)
+    return math.fmod(2.0 * d, math.tau) - d
+
+
+def lerp_angle(a, b, t):
+    return a + angle_difference(a, b) * t
+
+
 _rng = _random.Random(1234)
 
 
@@ -1738,17 +2105,48 @@ def _path(p):
 
 
 class Time:
+    """Real time by default; with `virtual` set (smoke runs) the clock only moves when the emulated
+    SceneTree steps, so touch hold times and timers behave as if frames took 1/60 s each."""
+    virtual = False
+    _virtual_usec = 1000000
+
     @staticmethod
     def get_unix_time_from_system():
         return _time.time()
 
     @staticmethod
     def get_ticks_msec():
-        return int(_time.monotonic() * 1000)
+        return Time.get_ticks_usec() // 1000
 
     @staticmethod
     def get_ticks_usec():
+        if Time.virtual:
+            return int(Time._virtual_usec)
         return int(_time.monotonic() * 1000000)
+
+    @staticmethod
+    def advance(seconds):
+        Time._virtual_usec += seconds * 1000000
+
+    @staticmethod
+    def get_time_zone_from_system():
+        return Dictionary({"bias": 0, "name": "UTC"})
+
+    @staticmethod
+    def get_datetime_dict_from_unix_time(t):
+        import datetime
+        d = datetime.datetime.fromtimestamp(int(t), datetime.timezone.utc)
+        return Dictionary({"year": d.year, "month": d.month, "day": d.day, "weekday": (d.weekday() + 1) % 7,
+                           "hour": d.hour, "minute": d.minute, "second": d.second, "dst": False})
+
+    @staticmethod
+    def get_datetime_dict_from_system(utc=False):
+        return Time.get_datetime_dict_from_unix_time(_time.time())
+
+    @staticmethod
+    def get_date_string_from_system(utc=False):
+        d = Time.get_datetime_dict_from_system()
+        return "%04d-%02d-%02d" % (d["year"], d["month"], d["day"])
 
 
 class OS:
@@ -1760,6 +2158,34 @@ class OS:
     def is_debug_build():
         return True
 
+    @staticmethod
+    def get_name():
+        return "Linux"
+
+    @staticmethod
+    def get_model_name():
+        return "gdemu"
+
+    @staticmethod
+    def get_locale():
+        return "en_US"
+
+    @staticmethod
+    def get_cmdline_args():
+        return PackedStringArray()
+
+    @staticmethod
+    def request_permissions():
+        return True
+
+    @staticmethod
+    def shell_open(uri):
+        return OK
+
+    @staticmethod
+    def get_unique_id():
+        return "gdemu"
+
 
 class Engine:
     max_fps = 0
@@ -1767,6 +2193,30 @@ class Engine:
     @staticmethod
     def get_frames_per_second():
         return 60.0
+
+    @staticmethod
+    def has_singleton(name):
+        return False
+
+    @staticmethod
+    def get_singleton(name):
+        return None
+
+    @staticmethod
+    def get_license_text():
+        return "Godot Engine (emulated licence text)"
+
+    @staticmethod
+    def get_copyright_info():
+        return Array([Dictionary({"name": "Godot Engine", "parts": Array([Dictionary({"files": Array(["*"]), "copyright": Array(["Godot Engine contributors"]), "license": "MIT"})])})])
+
+    @staticmethod
+    def get_license_info():
+        return Dictionary({"MIT": "MIT licence text"})
+
+    @staticmethod
+    def get_version_info():
+        return Dictionary({"major": 4, "minor": 3, "patch": 0, "string": "4.3-emulated"})
 
 
 class FileAccess(RefCounted):
@@ -1890,9 +2340,29 @@ class Marshalls:
 
 
 class ResourceLoader:
+    THREAD_LOAD_INVALID_RESOURCE, THREAD_LOAD_IN_PROGRESS, THREAD_LOAD_FAILED, THREAD_LOAD_LOADED = 0, 1, 2, 3
+    _requested = set()
+
     @staticmethod
-    def exists(p):
+    def exists(p, type_hint=""):
         return os.path.exists(_path(p))
+
+    @staticmethod
+    def load_threaded_request(path, type_hint="", use_sub_threads=False, cache_mode=1):
+        ResourceLoader._requested.add(path)
+        return OK
+
+    @staticmethod
+    def load_threaded_get_status(path, progress=None):
+        return ResourceLoader.THREAD_LOAD_LOADED if path in ResourceLoader._requested else ResourceLoader.THREAD_LOAD_INVALID_RESOURCE
+
+    @staticmethod
+    def load_threaded_get(path):
+        return load_(path)
+
+    @staticmethod
+    def load(path, type_hint="", cache_mode=1):
+        return load_(path)
 
 
 def _to_gd(x):

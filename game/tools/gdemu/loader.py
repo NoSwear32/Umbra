@@ -9,7 +9,7 @@ import re
 import sys
 import traceback
 
-from . import media
+from . import engine, media
 from . import runtime as rt
 from .transpile import Project, TranspileError, transpile_script
 
@@ -31,13 +31,14 @@ _MISSING = object()
 
 
 class Loader:
-    def __init__(self, root, dump_dir=None):
+    def __init__(self, root, dump_dir=None, permissive=False):
         self.root = os.path.abspath(root)
         rt.PROJECT_ROOT = self.root
         rt.SCRIPT_LOADER = self.load_script
         rt.RESOURCE_LOADER = self.load_resource
         self.project = Project(self.root)
         media.install(rt)
+        engine.install(rt, permissive)
         rt.GLOBAL_CLASS_LIST = self.project.class_paths
         self.ns = NS(self)
         for name in dir(rt):
@@ -137,30 +138,36 @@ class Loader:
             inst = cls()
             self.autoloads[name] = inst
             return inst
+        found = engine.lookup(name)
+        if found is not None:
+            return found
         return _MISSING
 
     def instantiate(self, path, *args):
         return self.load_script(path)(*args)
 
-    # ---- autoload boot (mirrors Main::start: construct all, then add to the tree in order)
-    def boot(self, real=("Events", "SaveManager", "SettingsManager", "StatisticsManager", "LeaderboardManager",
-                         "CharacterManager", "ReplayManager", "GameManager")):
-        """Creates the autoload singletons: `real` ones from their scripts (their _ready() runs in project
-        order), the rest as recording stubs (they need audio, sensors or the UI)."""
-        order = [n for n in self.project.autoloads if n in real]
-        for name in self.project.autoloads:
+    # ---- autoload boot (mirrors Main::start: construct all, then add to the tree in project order)
+    DEFAULT_REAL = ("Events", "SaveManager", "SettingsManager", "StatisticsManager", "LeaderboardManager",
+                    "CharacterManager", "ReplayManager", "GameManager")
+
+    def boot(self, real=None):
+        """Creates the autoload singletons. `real` names come from their scripts (their _ready() runs in
+        project order); every other autoload is a recording stub. real="all" boots everything."""
+        names = list(self.project.autoloads)
+        if real == "all":
+            real = names
+        real = set(real if real is not None else self.DEFAULT_REAL)
+        for name in names:
             if name in real:
                 inst = self.load_script(self.project.autoloads[name])()
+                inst.name = name
             else:
                 inst = rt.AutoStub(name)
             self.ns[name] = inst
             self.autoloads[name] = inst
-        for name in order:
-            inst = self.autoloads[name]
-            inst._gd_in_tree = True
-            ready = getattr(inst, "_ready", None)
-            if ready is not None:
-                ready()
+        for name in names:
+            if name in real:
+                rt.TREE.root.add_child(self.autoloads[name])      # runs _enter_tree / _ready
         rt.run_deferred()
         return self.autoloads
 

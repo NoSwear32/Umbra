@@ -1,8 +1,10 @@
 # QA checklist
 
 Two parts: what the **automated tests** cover (headless, `tools/run_tests.sh`) and what has to be checked
-**by hand on a device**. The automated part could not be executed where the project was written (no engine
-available), so run it first — every unchecked box below is work still to be confirmed.
+**by hand on a device**. The Godot engine could not be run where the project was written, so the automated
+suites have **not** been executed by the engine yet — run `tools/run_tests.sh` first. They *were* executed on
+an emulator of the GDScript logic (`tools/gdemu`, see section 2b), which is evidence about the game's logic
+and about the tests, not about the engine. Every unchecked box below is work still to be confirmed.
 
 ## 1. Required test cases A–O
 
@@ -36,12 +38,28 @@ available), so run it first — every unchecked box below is work still to be co
 | `test_replay.gd` | event encoding, exact playback through JSON, tuning snapshots, corruption/version checks |
 | `test_save.gd` | atomic writes, crash recovery, backup, migration, forward compatibility |
 | `test_records.gd` | leaderboards (ranking, ties, trimming, record flags, damaged data, provider interface), statistics |
+| `test_flow.gd` | the autoload pipeline in a sandboxed profile: end of run → records, statistics, unlocks, replay file; replay rename/delete/share/prune; interrupted-run recovery; settings; restart and backup recovery |
 | `test_input.gd` | touch zones and multi-touch, tilt mapping/filter/calibration/safety, InputManager taps, input→sim |
 | `test_config.gd` | landscape/scaling/sensor settings, tuning classification and snapshots, safe-area maths, themes, export presets, assets |
 | `test_characters.gd` | sheet layout contract, animation fallbacks, custom-pack validation and safety |
 
 Expected result: `ALL TESTS PASSED` and exit code 0. The script also fails the run if the engine printed
 `SCRIPT ERROR` (GDScript continues after a runtime error, so a green summary alone is not enough).
+
+## 2b. What was verified without the engine (emulator)
+
+`python3 -m tools.gdemu test` transpiles the GDScript to Python and runs every suite above on an emulated
+runtime (see [tools/gdemu/README.md](../tools/gdemu/README.md)); `python3 -m tools.gdemu smoke --seeded` boots
+all autoloads and the main scene on engine *stubs* and lets a random "monkey" press buttons, sweep sliders,
+touch, tilt, pause, background the app, watch replays and teleport through every theme.
+
+* All 12 suites pass (3.3k checks), including tick-exact comparison of the simulation with the golden vectors of
+  the independent Python reference. 28 injected defects were all detected (`python3 -m tools.gdemu.mutation_check`).
+* The monkey run visits every screen, executes ~85 % of the lines of the scripts it loads and ended without a
+  Python-level error after the defect it found had been fixed (leaving a replay left the scene running one
+  update step per frame on a null replay player during the fade-out).
+* **Not** verified: anything the engine does — layout, rendering, fonts and textures on a real GPU, audio,
+  touch and sensor latency, Android lifecycle, performance, export. Sections 3 onwards are still open.
 
 ## 3. Manual checklist (Android device)
 

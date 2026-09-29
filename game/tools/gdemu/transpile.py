@@ -18,6 +18,7 @@ from gdtoolkit.parser import parser as gdparser
 from lark import Token, Tree
 
 from . import runtime as rt
+from .gd_utils import UTILITY_FUNCTIONS
 
 
 class TranspileError(Exception):
@@ -375,6 +376,16 @@ class Project:
                 return cur, None
             return other, None
         return None, val
+
+    def builtin_root(self, ci):
+        """Name of the engine class at the root of a script's inheritance chain."""
+        cur = ci
+        for _ in range(50):
+            nxt, builtin = self.parent_of(cur)
+            if nxt is None:
+                return builtin
+            cur = nxt
+        return None
 
     def resolve_member(self, ci, name):
         seen = 0
@@ -857,6 +868,10 @@ class Gen:
         if d == "var_capture_pattern":
             py = ctx.declare(str(p.children[0]), None, "dyn")
             return "(_bind(lambda: None) or True)" if False else "True"
+        if d == "attr_pattern":
+            # Enum.VALUE / Class.CONST written as a pattern: same as the expression
+            g = Tree("getattr", list(p.children), p.meta)
+            return "(%s == %s)" % (subj, self.x_getattr(g, ctx))
         if d in ("array_pattern", "dict_pattern"):
             self.error("array/dict match patterns are not supported", p)
         return "(%s == %s)" % (subj, self.ex(p, ctx))
@@ -916,7 +931,7 @@ class Gen:
             return
         m = self.p.resolve_member(ctx.cls, name)
         if m is None:
-            if not ctx.static and self.inherited_builtin(name):
+            if not ctx.static and self.inherited_builtin(name, ctx):
                 m = Member("var", name, None, ctx.cls)
             else:
                 self.unresolved.add(name)
@@ -1247,7 +1262,7 @@ class Gen:
             return self.global_name(ci)
         if name in self.p.autoloads:
             return name
-        if not ctx.static and not hasattr(rt, name) and self.inherited_builtin(name):
+        if not ctx.static and not hasattr(rt, name) and self.inherited_builtin(name, ctx):
             return "self.%s" % mangle_attr(name)
         if name in rt.NAMESPACE_OVERRIDES:
             return rt.NAMESPACE_OVERRIDES[name].__name__ if callable(rt.NAMESPACE_OVERRIDES[name]) else name
@@ -1258,10 +1273,16 @@ class Gen:
         self.unresolved.add(name)
         return name
 
-    @staticmethod
-    def inherited_builtin(name):
-        """A member the engine base classes (Object, Node) provide."""
-        return hasattr(rt.Node, name) or hasattr(rt.Object, name)
+    def inherited_builtin(self, name, ctx=None):
+        """A member the engine base class provides. Known ones are matched exactly; for scripts derived
+        from other engine classes (Control, Node2D, ...) any lower-case name that is not a GDScript
+        utility function is assumed to be an inherited member (the runtime stubs accept it)."""
+        if hasattr(rt.Node, name) or hasattr(rt.Object, name):
+            return True
+        if ctx is None or name in UTILITY_FUNCTIONS or not name[:1].islower():
+            return False
+        root = self.p.builtin_root(ctx.cls)
+        return root not in (None, "RefCounted", "Object", "Resource")
 
     def name_type(self, name, ctx):
         if name in ("true", "false"):
@@ -1411,7 +1432,7 @@ class Gen:
                 return "self.%s(%s)" % (mangle_attr(name), ", ".join(args))
             if m.kind == "static_func":
                 return "%s.%s(%s)" % (self.global_name(m.owner), mangle_attr(name), ", ".join(args))
-        if not ctx.static and not hasattr(rt, name) and name not in rt.NAMESPACE_OVERRIDES and self.inherited_builtin(name):
+        if not ctx.static and not hasattr(rt, name) and name not in rt.NAMESPACE_OVERRIDES and self.inherited_builtin(name, ctx):
             return "self.%s(%s)" % (mangle_attr(name), ", ".join(args))
         if name == "preload" or name == "load":
             return "%s(%s)" % (EXTRA_FUNCS[name], ", ".join(args))
@@ -1470,6 +1491,11 @@ class Gen:
                 if ctx.lookup(rname) is None and self.p.resolve_member(ctx.cls, rname) is None and (
                         rname in self.p.autoloads or hasattr(rt, rname)):
                     code = self.name_value(rname, ctx, recv)
+                    if rname in self.p.autoloads:
+                        # singleton member: a property, or a method used as a value (Callable)
+                        for a in attrs:
+                            code = "_ga(%s, %r)" % (code, mangle_attr(a))
+                        return code
                     return "%s%s" % (code, "".join(".%s" % mangle_attr(a) for a in attrs))
                 m = self.p.resolve_member(ctx.cls, rname)
                 if m is not None and m.kind in ("enum",):
